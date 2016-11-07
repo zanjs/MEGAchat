@@ -259,20 +259,6 @@ if [[ $platform == "macos" ]]; then
 
     echo "Setting GYP_DEFINES..."
     export GYP_DEFINES="$GYP_DEFINES OS=mac libjingle_objc=1 target_arch=x64 mac_deployment_target=10.7"
-
-    echo "Replacing macos capturer..."
-    rm -rf webrtc/modules/video_capture/mac
-    cp -rv "$karere/macos/mac-capturer" "webrtc/modules/video_capture/mac"
-    if [ ! -f ./.patched-mac-capturer ]; then
-        echo "Applying patch for capturer"
-        git apply "$karere/macos/capturer.patch"
-        touch ./.patched-mac-capturer
-    fi
-    if [ ! -f ./.patched-common.gypi ]; then
-        echo "Applying patch to common.gypi"
-        git apply "$karere/macos/common.gypi.patch"
-        touch ./.patched-common.gypi
-    fi
 elif [[ "$platform" == "linux" ]]; then
     echo "Setting GYP_DEFINES for Linux..."
     export GYP_DEFINES="$GYP_DEFINES OS=linux clang=0 use_sysroot=0"

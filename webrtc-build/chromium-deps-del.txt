@@ -65,6 +65,11 @@ h sysroot
 h landmines
 h eu-strip
 h drmemory
+h lastchange_skia
+h blimp_fonts
+h doclava
+h wasm_fuzzer
+h wasm_asmjs_fuzzer
 
 #mac
 d chrome/tools/test/reference_build/chrome_mac
@@ -110,6 +115,22 @@ d third_party/netty-tcnative/src
 d third_party/netty4/src
 d third_party/robolectric/lib
 d third_party/ub-uiautomator/lib
+#new
+h intellij
+h sqlite4java
+h objenesis
+h bouncycastle
+h accessibility_test_framework
+h icu4j
+h robolectric_libs
+h ow2_asm
+h espresso
+h byte_buddy
+h android_support_test_runner
+h guava
+h hamcrest
+h javax_inject
+
 
 #windows
 d chrome/tools/test/reference_build/chrome_win

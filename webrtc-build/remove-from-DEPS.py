@@ -35,7 +35,7 @@ for dep in deplist:
         data=re.sub(rx, "", data, 0, re.M)
         print("Remove dependency '%s': %s" % (dep, ("success" if len(data) != prevlen else "\033[1;31mFAIL\033[0;0m")))
     elif type == 'h':
-        data = re.sub("{(\s*#.*$)*\n\s*'name':\s*'"+dep+"',\s*\n[^}]+},", "", data, 0, re.M)
+        data = re.sub("{(\s*#.*$)*\n\s*['\"]name['\"]:\s*['\"]"+dep+"['\"],\s*\n[^}]+},", "", data, 0, re.M)
         print("Remove hook '%s': %s" % (dep, ("success" if len(data) != prevlen else "\033[1;31mFAIL\033[0;0m")))
     elif type == 'm': #hook without a name, identify plain string match
         data = re.sub(dep, "", data, 0, re.M);
