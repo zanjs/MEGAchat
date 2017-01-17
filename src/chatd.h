@@ -178,10 +178,14 @@ public:
      */
     virtual void onUserLeave(karere::Id userid){}
 
-    /** @brief We have been excluded from this chatroom */
+    /** @brief We have been excluded from this chatroom. This is not called by
+     * chatd, but by karere, in response to onUserJoin, after it does some general
+     * processing
+     */
     virtual void onExcludedFromChat() {}
 
-    /** @brief We have rejoined the room
+    /** @brief We have rejoined the room. Not called directly by chatd, but by karere,
+     * in response to onUserJoin, after it does some general processing
      */
     virtual void onRejoinedChat() {}
 

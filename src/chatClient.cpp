@@ -1640,10 +1640,10 @@ void GroupChatRoom::updateAllOnlineDisplays(Presence pres)
 
 void GroupChatRoom::onUserJoin(Id userid, chatd::Priv privilege)
 {
-    if (userid != parent.client.myHandle())
-    {
-        addMember(userid, privilege, false);
-    }
+    if (userid == parent.client.myHandle())
+        return;
+
+    addMember(userid, privilege, false);
     if (mRoomGui)
     {
         mRoomGui->onUserJoin(userid, privilege);
@@ -1652,10 +1652,10 @@ void GroupChatRoom::onUserJoin(Id userid, chatd::Priv privilege)
 
 void GroupChatRoom::onUserLeave(Id userid)
 {
-    if (userid != parent.client.myHandle())
-    {
-        removeMember(userid);
-    }
+    if (userid == parent.client.myHandle())
+        return;
+
+    removeMember(userid);
     if (mRoomGui)
     {
         mRoomGui->onUserLeave(userid);
