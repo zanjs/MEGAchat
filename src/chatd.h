@@ -27,6 +27,7 @@ namespace chatd
 
 /// This type is used for ordered indexes in the message buffer
 typedef int32_t Idx;
+typedef std::map<karere::Id, Priv> UserPrivMap;
 
 /// We want to fit in the positive range of a signed int64_t, for compatibility with sqlite which has no unsigned types
 /// Don't use an enum as its implicit type may screw up our value
@@ -375,8 +376,8 @@ protected:
     bool mHasMoreHistoryInDb = false;
     Listener* mListener;
     ChatState mOnlineState = kChatStateOffline;
-    karere::SetOfIds mUsers;
-    karere::SetOfIds mUserDump; //< The initial dump of JOINs goes here, then after join is complete, mUsers is set to this in one step
+    UserPrivMap mUsers;
+    UserPrivMap mUserDump; //< The initial dump of JOIN goes here, then after join is complete, mUsers is set to this in one step
     /// db-supplied initial range, that we use until we see the message with mOldestKnownMsgId
     /// Before that happens, missing messages are supposed to be in the database and
     /// incrementally fetched from there as needed. After we see the mOldestKnownMsgId,
@@ -480,7 +481,7 @@ protected:
 public:
     unsigned initialHistoryFetchCount = 32; //< This is the amount of messages that will be requested from server _only_ in case local db is empty
     /** @brief users The current set of users in the chatroom */
-    const karere::SetOfIds& users() const { return mUsers; }
+    const UserPrivMap& users() const { return mUsers; }
     ~Chat();
     /** @brief The chatid of this chat */
     karere::Id chatId() const { return mChatId; }

@@ -1003,7 +1003,7 @@ uint64_t PeerChatRoom::getSdkRoomPeer(const ::mega::MegaTextChat& chat)
     return peers.getPeerHandle(0);
 }
 
-bool PeerChatRoom::syncOwnPriv(chatd::Priv priv)
+bool ChatRoom::syncOwnPriv(chatd::Priv priv)
 {
     if (mOwnPriv == priv)
         return false;
@@ -1521,11 +1521,6 @@ promise::Promise<void> GroupChatRoom::leave()
             return promise::_Void();
         else
             return err;
-    })
-    .then([this, wptr]()
-    {
-        wptr.throwIfDeleted();
-        setRemoved();
     });
 }
 
@@ -1544,23 +1539,16 @@ promise::Promise<void> GroupChatRoom::invite(uint64_t userid, chatd::Priv priv)
     .then([this, wptr, userid, priv](const std::string& title)
     {
         wptr.throwIfDeleted();
-        return parent.client.api.call(&mega::MegaApi::inviteToChat, mChatid, userid, priv,
+        return parent.client.api.callIgnoreResult(&mega::MegaApi::inviteToChat, mChatid, userid, priv,
             title.empty() ? nullptr: title.c_str());
-    })
-    .then([this, wptr, userid, priv](ReqResult)
-    {
-        wptr.throwIfDeleted();
-        addMember(userid, priv, true);
     });
 }
 
-bool ChatRoom::syncRoomPropertiesWithApi(const mega::MegaTextChat &chat)
+bool ChatRoom::syncRoomProperties(const chatd::Priv ownPriv)
 {
     bool changed = false;
-    if (chat.getShard() != mShardNo)
-        throw std::runtime_error("syncWithApi: Shard number of chat can't change");
-    if (chat.isGroup() != mIsGroup)
-        throw std::runtime_error("syncWithApi: isGroup flag can't change");
+//    if (chat.isGroup() != mIsGroup)
+//        throw std::runtime_error("syncWithApi: isGroup flag can't change");
     auto db = parent.client.db;
     auto url = chat.getUrl();
     if (url && url[0])
@@ -1573,14 +1561,7 @@ bool ChatRoom::syncRoomPropertiesWithApi(const mega::MegaTextChat &chat)
             KR_LOG_DEBUG("Chatroom %s: URL updated from API", Id(mChatid).toString().c_str());
         }
     }
-    chatd::Priv ownPriv = (chatd::Priv)chat.getOwnPrivilege();
-    if (ownPriv != mOwnPriv)
-    {
-        mOwnPriv = ownPriv;
-        changed = true;
-        sqliteQuery(db, "update chats set own_priv=? where chatid=?", ownPriv, mChatid);
-        KR_LOG_DEBUG("Chatroom %s: own privilege updated from API", Id(mChatid).toString().c_str());
-    }
+    changed |= syncOwnPriv(ownPriv);
     return changed;
 }
 
@@ -1640,8 +1621,21 @@ void GroupChatRoom::updateAllOnlineDisplays(Presence pres)
 
 void GroupChatRoom::onUserJoin(Id userid, chatd::Priv privilege)
 {
+    assert(privilege != chatd::PRIV_NOTPRESENT);
     if (userid == parent.client.myHandle())
-        return;
+    {
+        if (privilege == mOwnPriv)
+        {
+            KR_LOG_WARNING("onUserJoin from chatd for our handle: no privilege change, ignoring event");
+            return;
+        }
+        auto oldPriv = mOwnPriv;
+        mOwnPriv = privilege;
+        if (oldPriv == chatd::PRIV_NOTPRESENT)
+        {
+            notifyRejoinedChat();
+        }
+    }
 
     addMember(userid, privilege, false);
     if (mRoomGui)
@@ -1653,12 +1647,16 @@ void GroupChatRoom::onUserJoin(Id userid, chatd::Priv privilege)
 void GroupChatRoom::onUserLeave(Id userid)
 {
     if (userid == parent.client.myHandle())
-        return;
-
-    removeMember(userid);
-    if (mRoomGui)
     {
-        mRoomGui->onUserLeave(userid);
+        setRemoved();
+    }
+    else
+    {
+        removeMember(userid);
+        if (mRoomGui)
+        {
+            mRoomGui->onUserLeave(userid);
+        }
     }
 }
 
@@ -1699,6 +1697,7 @@ void PeerChatRoom::onOnlineStateChange(chatd::ChatState state)
 {
     if (state == chatd::kChatStateOnline)
     {
+        syncWithChatd();
         notifyPresenceChange(presence());
     }
     else
@@ -1754,9 +1753,15 @@ void ChatRoom::synchronousNotifyTitleChanged()
 
 void GroupChatRoom::onOnlineStateChange(chatd::ChatState state)
 {
-    updateAllOnlineDisplays((state == chatd::kChatStateOnline)
-        ? Presence::kOnline
-        : Presence::kOffline);
+    if (state == chatd::kChatStateOnline)
+    {
+        syncWithChatd();
+        updateAllOnlineDisplays(Presence::kOnline);
+    }
+    else
+    {
+        updateAllOnlineDisplays(Presence::kOffline);
+    }
 }
 
 void GroupChatRoom::onUnreadChanged()
@@ -1766,15 +1771,16 @@ void GroupChatRoom::onUnreadChanged()
         mRoomGui->onUnreadCountChanged(count);
 }
 
-bool GroupChatRoom::syncMembers(const UserPrivMap& users)
+bool GroupChatRoom::syncWithChatd()
 {
+    auto& chatdUsers = chat.users();
     bool changed = false;
     auto db = parent.client.db;
     for (auto ourIt=mPeers.begin(); ourIt!=mPeers.end();)
     {
         auto userid = ourIt->first;
-        auto it = users.find(userid);
-        if (it == users.end()) //we have a user that is not in the chatroom anymore
+        auto it = chatdUsers.find(userid);
+        if (it == chatdUsers.end()) //we have a user that is not in the chatroom anymore
         {
             changed = true;
             auto erased = ourIt;
@@ -1783,7 +1789,7 @@ bool GroupChatRoom::syncMembers(const UserPrivMap& users)
             mPeers.erase(erased);
             delete member;
             sqliteQuery(db, "delete from chat_peers where chatid=? and userid=?", mChatid, userid);
-            KR_LOG_DEBUG("GroupChatRoom[%s]:syncMembers: Removed member %s",
+            KR_LOG_DEBUG("GroupChatRoom[%s]:syncWithChatd: Removed member %s",
                  Id(mChatid).toString().c_str(),  Id(userid).toString().c_str());
         }
         else
@@ -1793,9 +1799,9 @@ bool GroupChatRoom::syncMembers(const UserPrivMap& users)
                 changed = true;
                 sqliteQuery(db, "update chat_peers set priv=? where chatid=? and userid=?",
                     it->second, mChatid, userid);
-                KR_LOG_DEBUG("GroupChatRoom[%s]:syncMembers: Changed privilege of member %s: %d -> %d",
+                KR_LOG_DEBUG("GroupChatRoom[%s]:syncWithChatd: Changed privilege of member %s: %d -> %d",
                      Id(chatid()).toString().c_str(), Id(userid).toString().c_str(),
-                     ourIt->second->mPriv, it->second);
+                     privToString(ourIt->second->mPriv), privToString(it->second));
                 ourIt->second->mPriv = it->second;
             }
             ourIt++;
@@ -1803,7 +1809,8 @@ bool GroupChatRoom::syncMembers(const UserPrivMap& users)
     }
     for (auto& user: users)
     {
-        if (mPeers.find(user.first) == mPeers.end())
+        if (user.first != parent.client.myHandle() &&
+           (mPeers.find(user.first) == mPeers.end()))
         {
             changed = true;
             addMember(user.first, user.second, true);
@@ -1811,20 +1818,17 @@ bool GroupChatRoom::syncMembers(const UserPrivMap& users)
     }
     return changed;
 }
+
 void GroupChatRoom::clearTitle()
 {
     makeTitleFromMemberNames();
     sqliteQuery(parent.client.db, "update chats set title=NULL where chatid=?", mChatid);
 }
 
-bool GroupChatRoom::syncWithApi(const mega::MegaTextChat& chat)
+bool GroupChatRoom::sync(const chart::Priv ownPriv, const std::string& title)
 {
-    auto oldPriv = mOwnPriv;
-    bool changed = ChatRoom::syncRoomPropertiesWithApi(chat);
-    UserPrivMap membs;
-    changed |= syncMembers(apiMembersToMap(chat, membs));
-    auto title = chat.getTitle();
-    if (title)
+    bool changed = ChatRoom::syncRoomProperties(ownPriv);
+    if (!title.empty())
     {
         mEncryptedTitle = title;
         if (parent.client.connected())
@@ -1836,29 +1840,6 @@ bool GroupChatRoom::syncWithApi(const mega::MegaTextChat& chat)
     {
         clearTitle();
         KR_LOG_DEBUG("Empty title received for group chat %s", Id(mChatid).toString().c_str());
-    }
-    if (changed)
-    {
-        if (oldPriv == chatd::PRIV_NOTPRESENT)
-        {
-            if (mOwnPriv != chatd::PRIV_NOTPRESENT)
-            {
-                //we were reinvited
-                notifyRejoinedChat();
-            }
-        }
-        else //room was active
-        {
-            if (mOwnPriv == chatd::PRIV_NOTPRESENT)
-            {
-                notifyExcludedFromChat();
-            }
-        }
-        KR_LOG_DEBUG("Synced group chatroom %s with API.", Id(mChatid).toString().c_str());
-    }
-    else
-    {
-        KR_LOG_DEBUG("Sync group chatroom %s with API: no changes", Id(mChatid).toString().c_str());
     }
     return changed;
 }
