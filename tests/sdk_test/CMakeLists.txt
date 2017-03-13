@@ -9,8 +9,6 @@ set (SRCS
     sdk_test.cpp
 )
 
-add_subdirectory(../../src karere)
-
 get_property(KARERE_INCLUDE_DIRS GLOBAL PROPERTY KARERE_INCLUDE_DIRS)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${KARERE_INCLUDE_DIRS})
 
