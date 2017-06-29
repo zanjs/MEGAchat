@@ -179,8 +179,8 @@ public:
 
     promise::Promise<void> truncateHistory(karere::Id msgId);
 
-    virtual std::vector<ApiPromise> requesGrantAccessToNodes(mega::MegaNodeList *nodes) = 0;
-    virtual std::vector<ApiPromise> requestRevokeAccessToNode(mega::MegaNode *node) = 0;
+    virtual promise::Promise<void> requesGrantAccessToNodes(mega::MegaNodeList *nodes) = 0;
+    virtual promise::Promise<void> requestRevokeAccessToNode(mega::MegaNode *node) = 0;
 };
 /** @brief Represents a 1on1 chatd chatroom */
 class PeerChatRoom: public ChatRoom
@@ -229,8 +229,8 @@ public:
     virtual void onUnreadChanged();
 /** @endcond */
 
-    virtual std::vector<ApiPromise> requesGrantAccessToNodes(mega::MegaNodeList *nodes);
-    virtual std::vector<ApiPromise> requestRevokeAccessToNode(mega::MegaNode *node);
+    virtual promise::Promise<void> requesGrantAccessToNodes(mega::MegaNodeList *nodes);
+    virtual promise::Promise<void> requestRevokeAccessToNode(mega::MegaNode *node);
 };
 
 /** @brief Represents a chatd chatroom that is a groupchat */
@@ -373,8 +373,8 @@ public:
      */
     promise::Promise<void> setPrivilege(karere::Id userid, chatd::Priv priv);
 
-    virtual std::vector<ApiPromise> requesGrantAccessToNodes(mega::MegaNodeList *nodes);
-    virtual std::vector<ApiPromise> requestRevokeAccessToNode(mega::MegaNode *node);
+    virtual promise::Promise<void> requesGrantAccessToNodes(mega::MegaNodeList *nodes);
+    virtual promise::Promise<void> requestRevokeAccessToNode(mega::MegaNode *node);
 };
 
 /** @brief Represents all chatd chatrooms that we are members of at the moment,
@@ -399,6 +399,8 @@ public:
 /** @brief Represents a karere contact. Also handles presence change events. */
 class Contact: public karere::DeleteTrackable
 {
+    friend class ContactList;
+    friend class PeerChatRoom;
 /** @cond PRIVATE */
 protected:
     ContactList& mClist;
@@ -418,8 +420,6 @@ protected:
     void setChatRoom(PeerChatRoom& room);
     void attachChatRoom(PeerChatRoom& room);
     void updatePresence(Presence pres);
-    friend class PeerChatRoom;
-    friend class Client;
 public:
     Contact(ContactList& clist, const uint64_t& userid, const std::string& email,
             int visibility, int64_t since, PeerChatRoom* room = nullptr);
@@ -483,8 +483,11 @@ public:
  */
 class ContactList: public std::map<uint64_t, Contact*>
 {
+    friend class Client;
 protected:
     void removeUser(iterator it);
+    void onPresenceChanged(Id userid, Presence pres);
+    void setAllOffline();
 public:
     /** @brief The Client object that this contactlist belongs to */
     Client& client;
@@ -530,6 +533,8 @@ class Client: public rtcModule::IGlobalEventHandler,
               public presenced::Listener,
               public karere::DeleteTrackable
 {
+public:
+    enum ConnState { kDisconnected = 0, kConnecting, kDisconnecting, kConnected };
 /** @cond PRIVATE */
 protected:
     std::string mAppDir;
@@ -538,7 +543,9 @@ protected:
     std::string mSid;
     std::unique_ptr<UserAttrCache> mUserAttrCache;
     std::string mMyEmail;
-    bool mConnected = false; //TODO: maybe integrate this in the mInitState
+    ConnState mConnState = kDisconnected;
+    promise::Promise<void> mConnectPromise;
+    promise::Promise<void> mDisconnectPromise;
 public:
     enum { kInitErrorType = 0x9e9a1417 }; //should resemble 'megainit'
     enum InitState: uint8_t
@@ -622,7 +629,8 @@ public:
     UserAttrCache& userAttrCache() const { return *mUserAttrCache; }
     presenced::Client& presenced() { return mPresencedClient; }
     bool contactsLoaded() const { return mContactsLoaded; }
-    bool connected() const { return mConnected; }
+    ConnState connState() const { return mConnState; }
+    bool connected() const { return mConnState == kConnected; }
     /** @endcond PRIVATE */
 
     /** @brief The contact list of the client */
@@ -700,6 +708,9 @@ public:
     bool hasInitError() const { return mInitState >= kInitErrFirst; }
     const char* initStateStr() const { return initStateToStr(mInitState); }
     static const char* initStateToStr(unsigned char state);
+    const char* connStateStr() const { return connStateToStr(mConnState); }
+    static const char* connStateToStr(ConnState state);
+
 
     /** @brief Does the actual connection to chatd and presenced. Assumes the
      * Mega SDK is already logged in. This must be called after
@@ -783,7 +794,7 @@ public:
 protected:
     std::string mMyName;
     bool mContactsLoaded = false;
-    promise::Promise<void> mCanConnectPromise;
+    promise::Promise<void> mSessionReadyPromise;
     Presence mOwnPresence;
     /** @brief Our own email address */
     std::string mEmail;
@@ -841,7 +852,7 @@ protected:
      * this method
      */
     promise::Promise<void> doConnect(Presence pres);
-
+    void setConnState(ConnState newState);
 #ifndef KARERE_DISABLE_WEBRTC
     // rtcModule::IGlobalEventHandler interface
     virtual rtcModule::IEventHandler* onIncomingCallRequest(
@@ -859,10 +870,7 @@ protected:
     // presenced listener interface
     virtual void onConnStateChange(presenced::Client::ConnState state);
     virtual void onPresenceChange(Id userid, Presence pres);
-    virtual void onPresenceConfigChanged(const presenced::Config& state, bool pending)
-    {
-        app.onPresenceConfigChanged(state, pending);
-    }
+    virtual void onPresenceConfigChanged(const presenced::Config& state, bool pending);
     //==
     friend class ChatRoom;
     friend class ChatRoomList;

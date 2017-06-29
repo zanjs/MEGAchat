@@ -295,7 +295,7 @@ void MegaChatApiTest::SetUp()
         nameReceived[i] = false;
 
         mNotTransferRunning[i] = true;
-        mPresenceConfigUpdated[i] = true;
+        mPresenceConfigUpdated[i] = false;
 
         mChatFirstname = "";
         mChatLastname = "";
@@ -677,20 +677,32 @@ bool MegaChatApiTest::TEST_ResumeSession(unsigned int accountIndex)
     list = NULL;
 
     // ___ Disconnect from chat server and reconnect ___
-    bool *flagDisconnect = &requestFlagsChat[accountIndex][MegaChatRequest::TYPE_DISCONNECT]; *flagDisconnect = false;
-    megaChatApi[accountIndex]->disconnect();
-    ASSERT_CHAT_TEST(waitForResponse(flagDisconnect), "Expired timeout for disconnect");
-    ASSERT_CHAT_TEST(!lastErrorChat[accountIndex], "Error disconect. Error: " + std::to_string(lastErrorChat[accountIndex]));
-    // reconnect
-    flagConnect = &requestFlagsChat[accountIndex][MegaChatRequest::TYPE_CONNECT]; *flagConnect = false;
-    megaChatApi[accountIndex]->connect();
-    ASSERT_CHAT_TEST(waitForResponse(flagConnect), "Expired timeout for connect");
-    ASSERT_CHAT_TEST(!lastErrorChat[accountIndex], "Error connect. Error: " + std::to_string(lastErrorChat[accountIndex]));
-    // check there's a list of chats already available
-    list = megaChatApi[accountIndex]->getChatListItems();
-    ASSERT_CHAT_TEST(list->size(), "Chat list item is empty");
-    delete list;
-    list = NULL;
+    for (int i = 0; i < 5; i++)
+    {
+        int conState = megaChatApi[accountIndex]->getConnectionState();
+        ASSERT_CHAT_TEST(conState == MegaChatApi::CONNECTED, "Wrong connection state: " + std::to_string(conState));
+
+        bool *flagDisconnect = &requestFlagsChat[accountIndex][MegaChatRequest::TYPE_DISCONNECT]; *flagDisconnect = false;
+        megaChatApi[accountIndex]->disconnect();
+        ASSERT_CHAT_TEST(waitForResponse(flagDisconnect), "Expired timeout for disconnect");
+        ASSERT_CHAT_TEST(!lastErrorChat[accountIndex], "Error disconnect. Error: " + std::to_string(lastErrorChat[accountIndex]));
+        conState = megaChatApi[accountIndex]->getConnectionState();
+        ASSERT_CHAT_TEST(conState == MegaChatApi::DISCONNECTED, "Wrong connection state: " + std::to_string(conState));
+
+        // reconnect
+        flagConnect = &requestFlagsChat[accountIndex][MegaChatRequest::TYPE_CONNECT]; *flagConnect = false;
+        megaChatApi[accountIndex]->connect();
+        ASSERT_CHAT_TEST(waitForResponse(flagConnect), "Expired timeout for connect");
+        ASSERT_CHAT_TEST(!lastErrorChat[accountIndex], "Error connect. Error: " + std::to_string(lastErrorChat[accountIndex]));
+        conState = megaChatApi[accountIndex]->getConnectionState();
+        ASSERT_CHAT_TEST(conState == MegaChatApi::CONNECTED, "Wrong connection state: " + std::to_string(conState));
+
+        // check there's a list of chats already available
+        list = megaChatApi[accountIndex]->getChatListItems();
+        ASSERT_CHAT_TEST(list->size(), "Chat list item is empty");
+        delete list;
+        list = NULL;
+    }
 
     delete [] session; session = NULL;
 }
@@ -712,9 +724,16 @@ void MegaChatApiTest::TEST_SetOnlineStatus(unsigned int accountIndex)
 
     ASSERT_CHAT_TEST(waitForResponse(flagPresence), "Presence config not received after " + std::to_string(maxTimeout) + " seconds");
 
-    flagPresence = &mPresenceConfigUpdated[accountIndex]; *flagPresence = false;
+    // Reset status to online before starting the test
     bool *flagStatus = &mOnlineStatusUpdated[accountIndex]; *flagStatus = false;
     bool *flag = &requestFlagsChat[accountIndex][MegaChatRequest::TYPE_SET_ONLINE_STATUS]; *flag = false;
+    megaChatApi[accountIndex]->setOnlineStatus(MegaChatApi::STATUS_ONLINE);
+    ASSERT_CHAT_TEST(waitForResponse(flag), "Failed to set online status after " + std::to_string(maxTimeout) + " seconds");
+    ASSERT_CHAT_TEST(!lastErrorChat[accountIndex], "Failed to set online status. Error: " + std::to_string(lastErrorChat[accountIndex]));
+
+    flagPresence = &mPresenceConfigUpdated[accountIndex]; *flagPresence = false;
+    flagStatus = &mOnlineStatusUpdated[accountIndex]; *flagStatus = false;
+    flag = &requestFlagsChat[accountIndex][MegaChatRequest::TYPE_SET_ONLINE_STATUS]; *flag = false;
     megaChatApi[accountIndex]->setOnlineStatus(MegaChatApi::STATUS_BUSY);
     ASSERT_CHAT_TEST(waitForResponse(flag), "Failed to set online status after " + std::to_string(maxTimeout) + " seconds");
     ASSERT_CHAT_TEST(!lastErrorChat[accountIndex], "Failed to set online status. Error: " + std::to_string(lastErrorChat[accountIndex]));

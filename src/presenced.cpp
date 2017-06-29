@@ -94,8 +94,10 @@ void Client::initWebsocketCtx()
 
 //Stale event from a previous connect attempt?
 #define ASSERT_NOT_ANOTHER_WS(event)    \
-    if (ws != self.mWebSocket) {       \
-        PRESENCED_LOG_WARNING("Websocket '" event "' callback: ws param is not equal to self->mWebSocket, ignoring"); \
+    if (ws != self.mWebSocket && self.mWebSocket) {   \
+        PRESENCED_LOG_WARNING("Websocket '" event     \
+        "' callback: ws param %p is not equal to self.mWebSocket %p, ignoring", \
+        ws, self.mWebSocket);                         \
     }
 
 promise::Promise<void>
@@ -134,6 +136,14 @@ void Client::websockConnectCb(ws_t ws, void* arg)
         self.setConnState(kConnected);
         self.mConnectPromise.resolve();
     });
+}
+
+void Client::websockMsgCb(ws_t ws, char *msg, uint64_t len, int binary, void *arg)
+{
+    Client& self = *static_cast<Client*>(arg);
+    ASSERT_NOT_ANOTHER_WS("message");
+    self.mPacketReceived = true;
+    self.handleMessage(StaticBuffer(msg, len));
 }
 
 void Client::notifyLoggedIn()
@@ -321,16 +331,7 @@ Client::reconnect(const std::string& url)
             checkLibwsCall((ws_init(&mWebSocket, &Client::sWebsocketContext)), "create socket");
             ws_set_onconnect_cb(mWebSocket, &websockConnectCb, this);
             ws_set_onclose_cb(mWebSocket, &websockCloseCb, this);
-            ws_set_onmsg_cb(mWebSocket,
-            [](ws_t ws, char *msg, uint64_t len, int binary, void *arg)
-            {
-                Client& self = *static_cast<Client*>(arg);
-                ASSERT_NOT_ANOTHER_WS("message");
-                self.mTsLastRecv = time(NULL);
-                self.mTsLastPingSent = 0;
-                self.handleMessage(StaticBuffer(msg, len));
-            }, this);
-
+            ws_set_onmsg_cb(mWebSocket, &websockMsgCb, this);
             if (mUrl.isSecure)
             {
                 ws_set_ssl_state(mWebSocket, LIBWS_SSL_SELFSIGNED);
@@ -397,7 +398,7 @@ void Client::heartbeat()
     }
     if (needReconnect)
     {
-        mConnState = kDisconnected;
+        setConnState(kDisconnected);
         mHeartbeatEnabled = false;
         reconnect();
     }
@@ -427,7 +428,7 @@ void Client::retryPendingConnections()
 {
     if (mUrl.isValid())
     {
-        mConnState = kDisconnected;
+        setConnState(kDisconnected);
         mHeartbeatEnabled = false;
         PRESENCED_LOG_WARNING("Retry pending connections...");
         reconnect();

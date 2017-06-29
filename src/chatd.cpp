@@ -207,7 +207,7 @@ void Client::notifyUserActive()
 void Chat::connect(const std::string& url)
 {
     // attempt a connection ONLY if this is a new shard.
-    if (mConnection.state() == Connection::kStateNew)
+    if (mConnection.state() == Connection::kStateNew || mConnection.state() == Connection::kStateDisconnected)
     {
         mConnection.reconnect(url)
         .fail([this](const promise::Error& err)
@@ -330,7 +330,7 @@ void Connection::onSocketClose(int errcode, int errtype, const std::string& reas
         return;
     }
 
-    if (mState < kStateLoggedIn) //tell retry controller that the connect attempt failed
+    if (oldState < kStateLoggedIn) //tell retry controller that the connect attempt failed
     {
         assert(!mLoginPromise.done());
         mConnectPromise.reject(reason, errcode, errtype);
@@ -339,7 +339,6 @@ void Connection::onSocketClose(int errcode, int errtype, const std::string& reas
     else
     {
         CHATD_LOG_DEBUG("Socket close and state is not kLoggedIn (but %d), start retry controller", mState);
-        mState = kStateDisconnected;
         reconnect(); //start retry controller
     }
 }

@@ -700,6 +700,8 @@ private:
 
     static int convertInitState(int state);
 
+    void sendAttachNodesMessage(std::string buffer, MegaChatRequestPrivate* request);
+
 public:
     static void megaApiPostMessage(void* msg);
     void postMessage(void *msg);
@@ -772,6 +774,7 @@ public:
     // General chat methods
     void connect(MegaChatRequestListener *listener = NULL);
     void disconnect(MegaChatRequestListener *listener = NULL);
+    int getConnectionState();
     void retryPendingConnections(MegaChatRequestListener *listener = NULL);
     void logout(MegaChatRequestListener *listener = NULL);
     void localLogout(MegaChatRequestListener *listener = NULL);
