@@ -295,7 +295,8 @@ protected:
     promise::Promise<void> mDisconnectPromise;
     promise::Promise<void> mLoginPromise;
     Connection(Client& client, int shardNo): mClient(client), mShardNo(shardNo){}
-    State state() { return mState; }
+    State state() const { return mState; }
+    void setState(State newState);
     bool isOnline() const
     {
         return mState >= kStateConnected; //(mWebSocket && (ws_get_state(mWebSocket) == WS_STATE_CONNECTED));

@@ -149,6 +149,7 @@ public:
         kConnNew = 0,
         kDisconnected,
         kConnecting,
+        kDisconnecting,
         kConnected,
         kLoggedIn
     };
@@ -164,6 +165,7 @@ protected:
     bool mTerminating = false;
     promise::Promise<void> mConnectPromise;
     promise::Promise<void> mLoginPromise;
+    promise::Promise<void> mDisconnectPromise;
     uint8_t mCapabilities;
     karere::Id mMyHandle;
     Config mConfig;
@@ -214,7 +216,7 @@ public:
     promise::Promise<void>
     connect(const std::string& url, karere::Id myHandle, IdRefMap&& peers,
         const Config& Config);
-    void disconnect();
+    promise::Promise<void> disconnect();
     void retryPendingConnections();
     void reset();
     /** @brief Performs server ping and check for network inactivity.

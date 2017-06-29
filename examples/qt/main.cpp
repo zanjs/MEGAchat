@@ -138,7 +138,32 @@ int main(int argc, char **argv)
         setVidencParams();
         signal(SIGINT, sigintHandler);
         QObject::connect(qApp, SIGNAL(lastWindowClosed()), &appDelegate, SLOT(onAppTerminate()));
-        gClient->connect(Presence::kInvalid);
+        gClient->connect(Presence::kInvalid)
+        .then([]()
+        {
+            return gClient->disconnect();
+        })
+        .then([]()
+        {
+            return gClient->connect();
+        })
+        .then([]()
+        {
+            return gClient->disconnect();
+        })
+        .then([]()
+        {
+            return gClient->connect();
+        })
+        .then([]()
+        {
+            return gClient->disconnect();
+        })
+        .then([]()
+        {
+            return gClient->connect();
+        });
+
     })
     .fail([](const promise::Error& err)
     {

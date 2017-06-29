@@ -700,12 +700,43 @@ promise::Promise<void> Client::disconnect()
     mUserAttrCache->removeCb(mOwnNameAttrHandle);
     mOwnNameAttrHandle = UserAttrCache::Handle::invalid();
     mUserAttrCache->onLogOut();
-    karere::cancelInterval(mHeartbeatTimer);
-    mHeartbeatTimer = 0;
-    auto pms = chatd->disconnect();
-    mPresencedClient.disconnect();
-    mConnected = false;
-    return pms;
+    if (mHeartbeatTimer)
+    {
+        karere::cancelInterval(mHeartbeatTimer);
+        mHeartbeatTimer = 0;
+    }
+    mDisconnectPromise = Promise<void>();
+    auto wptr = weakHandle();
+    promise::when(
+        chatd->disconnect(),
+        mPresencedClient.disconnect())
+    .then([this, wptr]()
+    {
+        if (wptr.deleted())
+            return;
+        setConnState(kDisconnected);
+        marshallCall([this]()
+        {
+            mDisconnectPromise.resolve();
+        });
+    })
+    .fail([this, wptr](const promise::Error& err)
+    {
+        if (wptr.deleted())
+            return;
+        setConnState(kDisconnected);
+        marshallCall([this, err]()
+        {
+            mDisconnectPromise.reject(err);
+        });
+    });
+
+    return mDisconnectPromise;
+}
+void Client::setConnState(ConnState newState)
+{
+    mConnState = newState;
+    KR_LOG_DEBUG("Client connection state changed to %s", connStateToStr(newState));
 }
 
 karere::Id Client::getMyHandleFromSdk()

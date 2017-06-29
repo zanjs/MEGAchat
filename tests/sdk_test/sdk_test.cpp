@@ -35,14 +35,16 @@ int main(int argc, char **argv)
 //    ::mega::MegaClient::APIURL = "https://staging.api.mega.co.nz/";
     MegaChatApiTest t;
     t.init();
-
     EXECUTE_TEST(t.TEST_SetOnlineStatus(0), "TEST Online status");
+
     EXECUTE_TEST(t.TEST_GetChatRoomsAndMessages(0), "TEST Load chatrooms & messages");
     EXECUTE_TEST(t.TEST_SwitchAccounts(0, 1), "TEST Switch accounts");
     EXECUTE_TEST(t.TEST_ClearHistory(0, 1), "TEST Clear history");
     EXECUTE_TEST(t.TEST_EditAndDeleteMessages(0, 1), "TEST Edit & delete messages");
     EXECUTE_TEST(t.TEST_GroupChatManagement(0, 1), "TEST Groupchat management");
+
     EXECUTE_TEST(t.TEST_ResumeSession(0), "TEST Resume session");
+
     EXECUTE_TEST(t.TEST_Attachment(0, 1), "TEST Attachments");
     EXECUTE_TEST(t.TEST_SendContact(0, 1), "TEST Send contact");
     EXECUTE_TEST(t.TEST_LastMessage(0, 1), "TEST Last message");
@@ -180,7 +182,7 @@ void MegaChatApiTest::init()
 {
     std::cout << "[========] Global test environment initialization" << endl;
 
-    signal(SIGINT, handlerSignalINT);
+//    signal(SIGINT, handlerSignalINT);
     mOKTests = mFailedTests = 0;
 
     logger = new MegaLoggerTest("test.log");

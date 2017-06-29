@@ -245,7 +245,7 @@ void Connection::websockConnectCb(ws_t ws, void* arg)
     CHATD_LOG_DEBUG("Chatd connected to shard %d", self->mShardNo);
     ::marshallCall([self]()
     {
-        self->mState = kStateConnected;
+        self->setState(kStateConnected);
         assert(!self->mConnectPromise.done());
         self->mConnectPromise.resolve();
     });
@@ -311,13 +311,19 @@ void Connection::onSocketClose(int errcode, int errtype, const std::string& reas
 #endif
     }
     disableInactivityTimer();
+    auto oldState = mState;
+    setState(kStateDisconnected);
+    if (mWebSocket)
+    {
+        ws_destroy(&mWebSocket);
+    }
     for (auto& chatid: mChatIds)
     {
         auto& chat = mClient.chats(chatid);
         chat.onDisconnect();
     }
 
-    if (mTerminating)
+    if (oldState == kDisconnecting)
     {
         if (!mDisconnectPromise.done())
             mDisconnectPromise.resolve(); //may delete this
@@ -351,6 +357,11 @@ bool Connection::sendKeepalive(uint8_t opcode)
     CHATD_LOG_DEBUG("shard %d: send %s", mShardNo, Command::opcodeToStr(opcode));
     return sendBuf(Command(opcode));
 }
+void Connection::setState(State newState)
+{
+    mState = newState;
+    CHATD_LOG_DEBUG("stard %d connection state changed to %s", newState);
+}
 
 Promise<void> Connection::reconnect(const std::string& url)
 {
@@ -368,7 +379,7 @@ Promise<void> Connection::reconnect(const std::string& url)
                 throw std::runtime_error("No valid URL provided and current URL is not valid");
         }
 
-        mState = kStateConnecting;
+        setState(kStateConnecting);
         return retry("chatd", [this](int no)
         {
             reset();
@@ -420,7 +431,7 @@ void Connection::enableInactivityTimer()
     {
         if (mInactivityBeats++ > 3)
         {
-            mState = kStateDisconnected;
+            setState(kStateDisconnected);
             disableInactivityTimer();
             CHATD_LOG_WARNING("Connection to shard %d inactive for too long, reconnecting...",
                 mShardNo);
@@ -453,7 +464,7 @@ void Connection::retryPendingConnection()
 {
     if (mUrl.isValid())
     {
-        mState = kStateDisconnected;
+        setState(kStateDisconnected);
         disableInactivityTimer();
         CHATD_LOG_WARNING("Retrying pending connenction...");
         reconnect();
@@ -2432,7 +2443,7 @@ void Connection::notifyLoggedIn()
 {
     if (mLoginPromise.done())
         return;
-    mState = kStateLoggedIn;
+    setState(kStateLoggedIn);
     assert(mConnectPromise.succeeded());
     mLoginPromise.resolve();
 }

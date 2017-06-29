@@ -206,18 +206,27 @@ void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
             DNS_OPTIONS_ALL & (~DNS_OPTION_SEARCH), "/etc/resolv.conf");
 #endif
     }
+    auto oldConnState = mConnState;
+    setConnState(kDisconnected);
     mHeartbeatEnabled = false;
-    if (mTerminating)
+    if (mWebSocket)
+    {
+        ws_destroy(&mWebSocket);
+    }
+    if (oldConnState == kDisconnecting) //disconnected on purpose, don't retry
+    {
+        assert(!mDisconnectPromise.done());
+        mDisconnectPromise.resolve();
         return;
+    }
 
-    if (mConnState < kLoggedIn) //tell retry controller that the connect attempt failed
+    if (oldConnState < kLoggedIn) //tell retry controller that the connect attempt failed
     {
         assert(!mLoginPromise.done());
         mConnectPromise.reject(reason, errcode, errtype);
     }
     else
     {
-        setConnState(kDisconnected);
         reconnect(); //start retry controller
     }
 }
@@ -394,12 +403,24 @@ void Client::heartbeat()
     }
 }
 
-void Client::disconnect() //should be graceful disconnect
+promise::Promise<void> Client::disconnect() //should be graceful disconnect
 {
+    printf("presenced disconnect: state = %s\n", connStateToStr(mConnState));
+    if (mConnState == kDisconnected)
+        return promise::_Void();
+     else if (mConnState == kDisconnecting)
+        return mDisconnectPromise;
+
     mHeartbeatEnabled = false;
-    mTerminating = true;
-    if (mWebSocket)
-        ws_close(mWebSocket);
+    setConnState(kDisconnecting);
+    if (!mWebSocket)
+    {
+        onSocketClose(0, 0, "terminating");
+        return promise::Void();
+    }
+    mDisconnectPromise = Promise<void>();
+    ws_close(mWebSocket);
+    return mDisconnectPromise;
 }
 
 void Client::retryPendingConnections()
@@ -665,9 +686,7 @@ void Client::setConnState(ConnState newState)
     if (newState == mConnState)
         return;
     mConnState = newState;
-#ifndef LOG_LISTENER_CALLS
     PRESENCED_LOG_DEBUG("Connection state changed to %s", connStateToStr(mConnState));
-#endif
     //dont use CALL_LISTENER because we need more intelligent logging
     try
     {
