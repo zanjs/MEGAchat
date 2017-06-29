@@ -4,6 +4,7 @@
 #include <libws_log.h>
 #include <event2/dns.h>
 #include <event2/dns_compat.h>
+#include "websockConn.h"
 
 #ifdef __ANDROID__
     #include <sys/system_properties.h>
@@ -74,9 +75,12 @@ Client::Client()
 void Client::websockConnectCb(ws_t ws, void* arg)
 {
     Client* self = static_cast<Client*>(arg);
+    auto wptr = self->weakHandle();
     ASSERT_NOT_ANOTHER_WS("connect");
-    ::marshallCall([self]()
+    ::marshallCall([wptr, self]()
     {
+        if (wptr.deleted())
+            return;
         self->setState(kStateConnected);
         assert(!self->mConnectPromise.done());
         self->mConnectPromise.resolve();
@@ -84,6 +88,7 @@ void Client::websockConnectCb(ws_t ws, void* arg)
 }
 void Client::websockMsgCb(ws_t ws, char *msg, uint64_t len, int binary, void *arg)
 {
+    onMessage
 }
 
 void Client::websockCloseCb(ws_t ws, int errcode, int errtype, const char *preason,
@@ -194,8 +199,8 @@ Promise<void> Client::reconnect(const std::string& url)
 {
     try
     {
-        if (mState >= kStateConnecting) //would be good to just log and return, but we have to return a promise
-            throw std::runtime_error(std::string("Already connecting/connected to shard ")+std::to_string(mShardNo));
+        if (mState >= kConnecting) //would be good to just log and return, but we have to return a promise
+            return promise::Error("Already connecting/connected");
         if (!url.empty())
         {
             mUrl.parse(url);
@@ -223,7 +228,6 @@ Promise<void> Client::reconnect(const std::string& url)
             {
                 ws_set_ssl_state(mWebSocket, LIBWS_SSL_SELFSIGNED);
             }
-            onConnecting();
             checkLibwsCall((ws_connect(mWebSocket, mUrl.host.c_str(), mUrl.port, (mUrl.path).c_str(), services_http_use_ipv6)), "connect");
             return mConnectPromise
             .then([this]() -> promise::Promise<void>
@@ -262,14 +266,14 @@ promise::Promise<void> Connection::disconnect(int timeoutMs) //should be gracefu
     return mDisconnectPromise;
 }
 
-bool Connection::retryPendingConnection()
+Promise<void> Connection::retryPendingConnection()
 {
     if (!mUrl.isValid())
-        return false;
+        return promise::Error("No url set");
     setState(kStateDisconnected);
     disableInactivityTimer();
     WS_LOG_WARNING("Retrying pending connection...");
-    reconnect();
+    return reconnect();
 }
 
 void Client::reset() //immediate disconnect
