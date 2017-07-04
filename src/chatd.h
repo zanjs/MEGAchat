@@ -280,7 +280,7 @@ class Client;
 class Connection: public karere::DeleteTrackable
 {
 public:
-    enum State { kStateNew, kStateDisconnected, kStateConnecting, kStateConnected, kStateLoggedIn };
+    enum State { kStateNew, kStateDisconnected, kStateDisconnecting, kStateConnecting, kStateConnected, kStateLoggedIn };
 protected:
     Client& mClient;
     int mShardNo;

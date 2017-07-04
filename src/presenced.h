@@ -1,7 +1,6 @@
 #ifndef __PRESENCED_H__
 #define __PRESENCED_H__
-
-#include <libws.h>
+#include <websockConn.h>
 #include <stdint.h>
 #include <string>
 #include <buffer.h>
@@ -141,31 +140,14 @@ struct IdRefMap: public std::map<karere::Id, int>
 
 class Listener;
 
-class Client: public karere::DeleteTrackable
+class Client: public ws::Client
 {
 public:
-    enum ConnState
-    {
-        kConnNew = 0,
-        kDisconnected,
-        kConnecting,
-        kDisconnecting,
-        kConnected,
-        kLoggedIn
-    };
     enum: uint16_t { kProtoVersion = 0x0001 };
 protected:
-    static ws_base_s sWebsocketContext;
-    static bool sWebsockCtxInitialized;
-    ws_t mWebSocket = nullptr;
-    ConnState mConnState = kConnNew;
     Listener* mListener;
-    karere::Url mUrl;
     bool mHeartbeatEnabled = false;
     bool mTerminating = false;
-    promise::Promise<void> mConnectPromise;
-    promise::Promise<void> mLoginPromise;
-    promise::Promise<void> mDisconnectPromise;
     uint8_t mCapabilities;
     karere::Id mMyHandle;
     Config mConfig;
@@ -176,22 +158,11 @@ protected:
     time_t mTsLastSend = 0;
     bool mPrefsAckWait = false;
     IdRefMap mCurrentPeers;
-    void initWebsocketCtx();
-    void setConnState(ConnState newState);
-    static void websockConnectCb(ws_t ws, void* arg);
-    static void websockCloseCb(ws_t ws, int errcode, int errtype, const char *reason,
-        size_t reason_len, void *arg);
-    static void websockMsgCb(ws_t ws, char *msg, uint64_t len, int binary, void *arg);
-    void onSocketClose(int ercode, int errtype, const std::string& reason);
-    promise::Promise<void> reconnect(const std::string& url=std::string());
     void enableInactivityTimer();
     void disableInactivityTimer();
-    void notifyLoggedIn();
-    void handleMessage(const StaticBuffer& buf); // Destroys the buffer content
     bool sendCommand(Command&& cmd);
     bool sendCommand(const Command& cmd);
-    void login();
-    bool sendBuf(Buffer&& buf);
+    void onConnect();
     void logSend(const Command& cmd);
     bool sendUserActive(bool active, bool force=false);
     bool sendPrefs();
@@ -201,11 +172,11 @@ protected:
     void configChanged();
     std::string prefsString() const;
     bool sendKeepalive(time_t now=0);
+    virtual void onMessage(const StaticBuffer &msg);
 public:
     Client(Listener& listener, uint8_t caps);
     const Config& config() const { return mConfig; }
     bool isConfigAcknowledged() { return mPrefsAckWait; }
-    bool isOnline() const { return (mConnState >= kConnected); }
     bool setPresence(karere::Presence pres);
     bool setPersist(bool enable);
 
@@ -217,9 +188,6 @@ public:
     promise::Promise<void>
     connect(const std::string& url, karere::Id myHandle, IdRefMap&& peers,
         const Config& Config);
-    promise::Promise<void> disconnect();
-    void retryPendingConnections();
-    void reset();
     /** @brief Performs server ping and check for network inactivity.
      * Must be called externally in order to have all clients
      * perform pings at a single moment, to reduce mobile radio wakeup frequency */
@@ -231,10 +199,9 @@ public:
     ~Client();
 };
 
-class Listener
+class Listener: public ws::Client::ConnStateListener
 {
 public:
-    virtual void onConnStateChange(Client::ConnState state) = 0;
     virtual void onPresenceChange(karere::Id userid, karere::Presence pres) = 0;
     virtual void onPresenceConfigChanged(const Config& Config, bool pending) = 0;
     virtual void onDestroy(){}
@@ -252,18 +219,6 @@ inline const char* Command::opcodeToStr(uint8_t opcode)
         case OP_ADDPEERS: return "ADDPEERS";
         case OP_DELPEERS: return "DELPEERS";
         default: return "(invalid)";
-    }
-}
-static inline const char* connStateToStr(Client::ConnState state)
-{
-    switch (state)
-    {
-    case Client::kDisconnected: return "Disconnected";
-    case Client::kConnecting: return "Connecting";
-    case Client::kConnected: return "Connected";
-    case Client::kLoggedIn: return "Logged-in";
-    case Client::kConnNew: return "New";
-    default: return "(invalid)";
     }
 }
 }

@@ -34,6 +34,7 @@ set (SRCS
     ${CMAKE_CURRENT_BINARY_DIR}/karereDbSchema.cpp
     strongvelope/strongvelope.cpp
     presenced.cpp
+    websockConn.cpp
     megachatapi.cpp
     megachatapi_impl.cpp
 )

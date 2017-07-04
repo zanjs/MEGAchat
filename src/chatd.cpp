@@ -323,7 +323,7 @@ void Connection::onSocketClose(int errcode, int errtype, const std::string& reas
         chat.onDisconnect();
     }
 
-    if (oldState == kDisconnecting)
+    if (oldState == kStateDisconnecting)
     {
         if (!mDisconnectPromise.done())
             mDisconnectPromise.resolve(); //may delete this
@@ -359,7 +359,7 @@ bool Connection::sendKeepalive(uint8_t opcode)
 void Connection::setState(State newState)
 {
     mState = newState;
-    CHATD_LOG_DEBUG("stard %d connection state changed to %s", newState);
+    CHATD_LOG_DEBUG("shard %d connection state changed to %d", newState);
 }
 
 Promise<void> Connection::reconnect(const std::string& url)

@@ -5,7 +5,7 @@
 #include <event2/dns.h>
 #include <event2/dns_compat.h>
 #include "websockConn.h"
-
+#include <buffer.h>
 #ifdef __ANDROID__
     #include <sys/system_properties.h>
 #elif defined(__APPLE__)
@@ -17,6 +17,11 @@
 
 using namespace std;
 using namespace promise;
+using namespace karere;
+
+#define WS_LOG_DEBUG(fmtString,...) mName.empty() ? KARERE_LOG_DEBUG(mLogChan, fmtString, ##__VA_ARGS__) : KARERE_LOG_DEBUG(mLogChan, "%s: " fmtString, mName.c_str(), ##__VA_ARGS__)
+#define WS_LOG_WARNING(fmtString,...) mName.empty() ? KARERE_LOG_WARNING(mLogChan, fmtString, ##__VA_ARGS__) : KARERE_LOG_WARNING(mLogChan, "%s: " fmtString, mName.c_str(), ##__VA_ARGS__)
+#define WS_LOG_ERROR(fmtString,...) mName.empty() ? KARERE_LOG_ERROR(mLogChan, fmtString, ##__VA_ARGS__) : KARERE_LOG_ERROR(mLogChan, "%s: " fmtString, mName.c_str(), ##__VA_ARGS__)
 
 namespace ws
 {
@@ -27,7 +32,8 @@ namespace ws
 ws_base_s Client::gContext;
 bool Client::gContextInitialized = false;
 
-Client::Client()
+Client::Client(ConnStateListener& listener, krLogChannelNo logChan, const std::string& name)
+: mConnStateListener(listener), mLogChan(logChan), mName(name)
 {
     if (!gContextInitialized)
     {
@@ -69,7 +75,7 @@ Client::Client()
 //Stale event from a previous connect attempt?
 #define ASSERT_NOT_ANOTHER_WS(event)    \
     if (ws != self->mWebSocket) {       \
-        WS_LOG_WARNING("Websocket '" event "' callback: ws param is not equal to self->mWebSocket, ignoring"); \
+        KR_LOG_WARNING("Websocket '" event "' callback: ws param is not equal to self->mWebSocket, ignoring"); \
     }
 
 void Client::websockConnectCb(ws_t ws, void* arg)
@@ -81,14 +87,21 @@ void Client::websockConnectCb(ws_t ws, void* arg)
     {
         if (wptr.deleted())
             return;
-        self->setState(kStateConnected);
+        self->setConnState(kConnected);
         assert(!self->mConnectPromise.done());
         self->mConnectPromise.resolve();
     });
 }
 void Client::websockMsgCb(ws_t ws, char *msg, uint64_t len, int binary, void *arg)
 {
-    onMessage
+    Client* self = static_cast<Client*>(arg);
+    auto wptr = self->weakHandle();
+    if (wptr.deleted())
+    {
+        return;
+    }
+    ASSERT_NOT_ANOTHER_WS("connect");
+    self->onMessage(StaticBuffer(msg, len));
 }
 
 void Client::websockCloseCb(ws_t ws, int errcode, int errtype, const char *preason,
@@ -111,11 +124,10 @@ void Client::websockCloseCb(ws_t ws, int errcode, int errtype, const char *preas
 
 void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
 {
-    CHATD_LOG_WARNING("Socket close on connection to shard %d. Reason: %s",
-        mShardNo, reason.c_str());
+    WS_LOG_WARNING("Socket close, reason: %s", reason.c_str());
     if (errtype == WS_ERRTYPE_DNS)
     {
-        CHATD_LOG_WARNING("->DNS error: forcing libevent to re-read /etc/resolv.conf");
+        WS_LOG_WARNING("->DNS error: forcing libevent to re-read /etc/resolv.conf");
         evdns_base_clear_host_addresses(services_dns_eventbase);
         //if we didn't have our network interface up at app startup, and resolv.conf is
         //genereated dynamically, dns may never work unless we re-read the resolv.conf file
@@ -152,23 +164,16 @@ void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
             DNS_OPTIONS_ALL & (~DNS_OPTION_SEARCH), "/etc/resolv.conf");
 #endif
     }
-    if (mState == kDisconnected)
+    if (mConnState == kDisconnected)
         return; //already disconnected forcibly do to timeout
-    disableInactivityTimer();
-    auto oldState = mState;
-    setState(kStateDisconnected);
+    disableKeepalive();
+    auto oldState = mConnState;
+    setConnState(kDisconnected);
     if (mWebSocket)
     {
         ws_destroy(&mWebSocket);
     }
-    try
-    {
-        onDisconnect();
-    }
-    catch(std::exception& e)
-    {
-        WS_LOG_ERROR("Exception thrown from onDisconnect user handler: %s", e.what());
-    }
+    onDisconnect();
     if (oldState == kDisconnecting)
     {
         if (!mDisconnectPromise.done())
@@ -176,7 +181,7 @@ void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
         return;
     }
 
-    if (oldState < kStateLoggedIn) //tell retry controller that the connect attempt failed
+    if (oldState < kLoggedIn) //tell retry controller that the connect attempt failed
     {
         assert(!mLoginPromise.done());
         mConnectPromise.reject(reason, errcode, errtype);
@@ -184,23 +189,28 @@ void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
     }
     else
     {
-        WS_LOG_DEBUG("Socket close and state is not kLoggedIn (but %d), start retry controller", mState);
+        WS_LOG_DEBUG("Socket close and state is not kLoggedIn (but %d), start retry controller", mConnState);
         reconnect(); //start retry controller
     }
 }
 
-void Client::setState(State newState)
+void Client::setConnState(ConnState newState)
 {
-    mState = newState;
-    WS_LOG_DEBUG("Connection state changed to %s", stateToStr(newState));
+    mConnState = newState;
+    WS_LOG_DEBUG("Connection state changed to %s", connStateToStr(newState));
+    try
+    {
+        mConnStateListener.onConnStateChange(newState);
+    }
+    catch(...){};
 }
 
 Promise<void> Client::reconnect(const std::string& url)
 {
     try
     {
-        if (mState >= kConnecting) //would be good to just log and return, but we have to return a promise
-            return promise::Error("Already connecting/connected");
+        if (mConnState >= kConnecting) //would be good to just log and return, but we have to return a promise
+            return promise::Error("reconnect: Already in state "+std::string(connStateToStr(mConnState)));
         if (!url.empty())
         {
             mUrl.parse(url);
@@ -211,15 +221,15 @@ Promise<void> Client::reconnect(const std::string& url)
                 throw std::runtime_error("No valid URL provided and current URL is not valid");
         }
 
-        setState(kStateConnecting);
         return retry(mName, [this](int no)
         {
             reset();
+            setConnState(kConnecting);
             mConnectPromise = Promise<void>();
             mLoginPromise = Promise<void>();
             mDisconnectPromise = Promise<void>();
-            CHATD_LOG_DEBUG("Connecting to %s...", mName.c_str());
-            checkLibwsCall((ws_init(&mWebSocket, &Client::sWebsocketContext)), "create socket");
+            WS_LOG_DEBUG("Connecting...");
+            checkLibwsCall((ws_init(&mWebSocket, &Client::gContext)), "create socket");
             ws_set_onconnect_cb(mWebSocket, &websockConnectCb, this);
             ws_set_onclose_cb(mWebSocket, &websockCloseCb, this);
             ws_set_onmsg_cb(mWebSocket, &websockMsgCb, this);
@@ -232,23 +242,24 @@ Promise<void> Client::reconnect(const std::string& url)
             return mConnectPromise
             .then([this]() -> promise::Promise<void>
             {
-                assert(mState >= kStateConnected);
-                enableInactivityTimer();
-                return onConnected();
+                assert(mConnState >= kConnected);
+                enableKeepalive();
+                onConnect();
+                return mLoginPromise;
             });
         }, nullptr, 0, 0, KARERE_RECONNECT_DELAY_MAX, KARERE_RECONNECT_DELAY_INITIAL);
     }
     KR_EXCEPTION_TO_PROMISE(kPromiseErrtype_websocket);
 }
 
-promise::Promise<void> Connection::disconnect(int timeoutMs) //should be graceful disconnect
+promise::Promise<void> Client::disconnect(int timeoutMs) //should be graceful disconnect
 {
-    if (mState == kDisconnected)
+    if (mConnState == kDisconnected)
         return promise::_Void();
-    else if (mState == kDisconnecting)
+    else if (mConnState == kDisconnecting)
         return mDisconnectPromise;
 
-    setState(kDisconnecting);
+    setConnState(kDisconnecting);
     if (!mWebSocket)
     {
         onSocketClose(0, 0, "user disconnect");
@@ -260,18 +271,31 @@ promise::Promise<void> Connection::disconnect(int timeoutMs) //should be gracefu
         if (wptr.deleted())
             return;
         if (!mDisconnectPromise.done())
-            onSocketClose(0, 0 , 'disconnect timeout');
+            onSocketClose(0, 0 , "disconnect timeout");
     }, timeoutMs);
     ws_close(mWebSocket);
     return mDisconnectPromise;
 }
+void Client::notifyLoggedIn()
+{
+    assert(mConnState < kLoggedIn);
+    assert(mConnectPromise.succeeded());
+    assert(!mLoginPromise.done());
+    setConnState(kLoggedIn);
+    mLoginPromise.resolve();
+}
+void Client::notifyDisconnected()
+{
+    mConnState = kDisconnected;
+    disableKeepalive();
+}
 
-Promise<void> Connection::retryPendingConnection()
+Promise<void> Client::retryPendingConnect()
 {
     if (!mUrl.isValid())
         return promise::Error("No url set");
-    setState(kStateDisconnected);
-    disableInactivityTimer();
+    setConnState(kDisconnected);
+    disableKeepalive();
     WS_LOG_WARNING("Retrying pending connection...");
     return reconnect();
 }
@@ -280,13 +304,13 @@ void Client::reset() //immediate disconnect
 {
     if (!mWebSocket)
     {
-        assert(mState == kDisconnected);
+        assert(mConnState == kDisconnected);
         return;
     }
-    setState(kDisconnecting);
+    setConnState(kDisconnecting);
     ws_close_immediately(mWebSocket);
     ws_destroy(&mWebSocket);
-    setState(kDisconnected);
+    setConnState(kDisconnected);
     assert(!mWebSocket);
 }
 
@@ -303,10 +327,10 @@ bool Client::sendBuf(Buffer&& buf)
 }
 
 
-#define RET_ENUM_NAME(name) case OP_##name: return #name;
-const char* Client::stateToStr(uint8_t opcode)
+#define RET_ENUM_NAME(name) case name: return #name;
+const char* Client::connStateToStr(ConnState state)
 {
-    switch (opcode)
+    switch (state)
     {
         RET_ENUM_NAME(kDisconnected);
         RET_ENUM_NAME(kConnecting);

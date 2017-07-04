@@ -230,7 +230,7 @@ void Client::retryPendingConnectionsCallback(int fd, short events, void *arg)
     Client *self = static_cast<Client*>(arg);
     marshallCall([self]()
     {
-        self->mPresencedClient.retryPendingConnections();
+        self->mPresencedClient.retryPendingConnect();
         if (self->chatd)
         {
             self->chatd->retryPendingConnections();
@@ -717,6 +717,7 @@ promise::Promise<void> Client::doConnect(Presence pres)
     })
     .fail([this](const promise::Error& err)
     {
+        KR_LOG_ERROR("Presenced connect error: %s", err.what());
         setConnState(kDisconnected);
     });
     assert(!mHeartbeatTimer);
