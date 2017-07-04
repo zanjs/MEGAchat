@@ -659,6 +659,7 @@ promise::Promise<void> Client::connect(Presence pres)
 // only the first connect() needs to wait for the mSessionReadyPromise.
 // Any subsequent connect()-s (preceded by disconnect()) can initiate
 // the connect immediately
+    printf("CLIENT CONNECT REQUESTED\n");
     if (mConnState == kConnecting)
         return mConnectPromise;
     else if (mConnState == kConnected)
@@ -730,6 +731,7 @@ promise::Promise<void> Client::doConnect(Presence pres)
 
 promise::Promise<void> Client::disconnect()
 {
+    printf("CLIENT DISCONNECT REQUESTED\n");
     if (mConnState == kDisconnected)
         return promise::_Void();
     else if (mConnState == kDisconnecting)

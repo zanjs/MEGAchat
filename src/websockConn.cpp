@@ -124,7 +124,14 @@ void Client::websockCloseCb(ws_t ws, int errcode, int errtype, const char *preas
 
 void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
 {
-    WS_LOG_WARNING("Socket close, reason: %s", reason.c_str());
+    if (mConnState == kDisconnecting)
+    {
+        WS_LOG_DEBUG("Socket closed on user request");
+    }
+    else
+    {
+        WS_LOG_WARNING("Socket close, reason: %s", reason.empty() ? "(unknown)" : reason.c_str());
+    }
     if (errtype == WS_ERRTYPE_DNS)
     {
         WS_LOG_WARNING("->DNS error: forcing libevent to re-read /etc/resolv.conf");
@@ -165,7 +172,7 @@ void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
 #endif
     }
     if (mConnState == kDisconnected)
-        return; //already disconnected forcibly do to timeout
+        return; //already disconnected forcibly due to disconnect timeout
     disableKeepalive();
     auto oldState = mConnState;
     setConnState(kDisconnected);
@@ -274,7 +281,7 @@ promise::Promise<void> Client::disconnect(int timeoutMs) //should be graceful di
             onSocketClose(0, 0 , "disconnect timeout");
     }, timeoutMs);
     ws_close(mWebSocket);
-    return mDisconnectPromise;
+    return mDisconnectPromise.then([]() { printf("WS disconnect promise resolved\n"); });
 }
 void Client::notifyLoggedIn()
 {
