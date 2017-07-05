@@ -1,7 +1,7 @@
 #ifndef __CHATD_H__
 #define __CHATD_H__
 
-#include <libws.h>
+#include "websockConn.h"
 #include <stdint.h>
 #include <string>
 #include <buffer.h>
@@ -13,7 +13,6 @@
 #include <base/timers.hpp>
 #include <base/trackDelete.h>
 #include "chatdMsg.h"
-#include "url.h"
 
 #define CHATD_LOG_DEBUG(fmtString,...) KARERE_LOG_DEBUG(krLogChannel_chatd, fmtString, ##__VA_ARGS__)
 #define CHATD_LOG_INFO(fmtString,...) KARERE_LOG_INFO(krLogChannel_chatd, fmtString, ##__VA_ARGS__)
@@ -277,55 +276,33 @@ public:
 class Client;
 
 // need DeleteTrackable for graceful disconnect timeout
-class Connection: public karere::DeleteTrackable
+class Connection: public ws::Client, protected ws::Client::ConnStateListener
 {
 public:
-    enum State { kStateNew, kStateDisconnected, kStateDisconnecting, kStateConnecting, kStateConnected, kStateLoggedIn };
 protected:
-    Client& mClient;
+    ::chatd::Client& mClient;
     int mShardNo;
     std::set<karere::Id> mChatIds;
-    ws_t mWebSocket = nullptr;
-    State mState = kStateNew;
-    karere::Url mUrl;
     megaHandle mInactivityTimer = 0;
     int mInactivityBeats = 0;
-    bool mTerminating = false;
-    promise::Promise<void> mConnectPromise;
-    promise::Promise<void> mDisconnectPromise;
-    promise::Promise<void> mLoginPromise;
-    Connection(Client& client, int shardNo): mClient(client), mShardNo(shardNo){}
-    State state() const { return mState; }
-    void setState(State newState);
-    bool isOnline() const
-    {
-        return mState >= kStateConnected; //(mWebSocket && (ws_get_state(mWebSocket) == WS_STATE_CONNECTED));
-    }
-    static void websockConnectCb(ws_t ws, void* arg);
-    static void websockCloseCb(ws_t ws, int errcode, int errtype, const char *reason,
-        size_t reason_len, void *arg);
-    void onSocketClose(int ercode, int errtype, const std::string& reason);
-    promise::Promise<void> reconnect(const std::string& url=std::string());
-    promise::Promise<void> disconnect(int timeoutMs=2000);
-    void notifyLoggedIn();
-    void enableInactivityTimer();
-    void disableInactivityTimer();
-    void reset();
+    Connection(::chatd::Client& client, int shardNo);
 // Destroys the buffer content
-    bool sendBuf(Buffer&& buf);
     promise::Promise<void> rejoinExistingChats();
     void resendPending();
     void join(karere::Id chatid);
     void hist(karere::Id chatid, long count);
-    void execCommand(const StaticBuffer& buf);
+    void onMessage(const StaticBuffer& buf);
     bool sendKeepalive(uint8_t opcode);
-    friend class Client;
+    virtual void onDisconnect();
+    virtual void onConnect();
+    void enableKeepalive();
+    void disableKeepalive();
+    friend class ::chatd::Client;
     friend class Chat;
 public:
-    void retryPendingConnection();
     ~Connection()
     {
-        disableInactivityTimer();
+        disableKeepalive();
         reset();
     }
 };

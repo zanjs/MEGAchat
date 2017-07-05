@@ -96,11 +96,11 @@ void Client::websockMsgCb(ws_t ws, char *msg, uint64_t len, int binary, void *ar
 {
     Client* self = static_cast<Client*>(arg);
     auto wptr = self->weakHandle();
-    if (wptr.deleted())
+    if (wptr.deleted() || !self->isOnline())
     {
         return;
     }
-    ASSERT_NOT_ANOTHER_WS("connect");
+    ASSERT_NOT_ANOTHER_WS("message");
     self->onMessage(StaticBuffer(msg, len));
 }
 
@@ -173,7 +173,7 @@ void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
     }
     if (mConnState == kDisconnected)
         return; //already disconnected forcibly due to disconnect timeout
-    disableKeepalive();
+    checkDisableKeepalive();
     auto oldState = mConnState;
     setConnState(kDisconnected);
     if (mWebSocket)
@@ -191,7 +191,10 @@ void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
     if (oldState < kLoggedIn) //tell retry controller that the connect attempt failed
     {
         assert(!mLoginPromise.done());
-        mConnectPromise.reject(reason, errcode, errtype);
+        if (!mConnectPromise.done())
+        {
+            mConnectPromise.reject(reason, errcode, errtype);
+        }
         mLoginPromise.reject(reason, errcode, errtype);
     }
     else
@@ -218,6 +221,7 @@ Promise<void> Client::reconnect(const std::string& url)
     {
         if (mConnState >= kConnecting) //would be good to just log and return, but we have to return a promise
             return promise::Error("reconnect: Already in state "+std::string(connStateToStr(mConnState)));
+        checkDisableKeepalive();
         if (!url.empty())
         {
             mUrl.parse(url);
@@ -250,8 +254,9 @@ Promise<void> Client::reconnect(const std::string& url)
             .then([this]() -> promise::Promise<void>
             {
                 assert(mConnState >= kConnected);
-                enableKeepalive();
                 onConnect();
+                assert(!mKeepaliveEnabled);
+                checkEnableKeepalive();
                 return mLoginPromise;
             });
         }, nullptr, 0, 0, KARERE_RECONNECT_DELAY_MAX, KARERE_RECONNECT_DELAY_INITIAL);
@@ -272,20 +277,18 @@ promise::Promise<void> Client::disconnect(int timeoutMs) //should be graceful di
         onSocketClose(0, 0, "user disconnect");
         return promise::Void();
     }
-    auto wptr = getDelTracker();
-    setTimeout([this, wptr]()
-    {
-        if (wptr.deleted())
-            return;
-        if (!mDisconnectPromise.done())
-            onSocketClose(0, 0 , "disconnect timeout");
-    }, timeoutMs);
     ws_close(mWebSocket);
     return mDisconnectPromise.then([]() { printf("WS disconnect promise resolved\n"); });
 }
 void Client::notifyLoggedIn()
 {
-    assert(mConnState < kLoggedIn);
+    if (mConnState == kLoggedIn)
+        return;
+    if (mConnState != kConnected)
+    {
+        WS_LOG_WARNING("Ignoring notifyLoggedIn() called when not connected");
+        return;
+    }
     assert(mConnectPromise.succeeded());
     assert(!mLoginPromise.done());
     setConnState(kLoggedIn);
@@ -294,7 +297,7 @@ void Client::notifyLoggedIn()
 void Client::notifyDisconnected()
 {
     mConnState = kDisconnected;
-    disableKeepalive();
+    checkDisableKeepalive();
 }
 
 Promise<void> Client::retryPendingConnect()
@@ -302,25 +305,42 @@ Promise<void> Client::retryPendingConnect()
     if (!mUrl.isValid())
         return promise::Error("No url set");
     setConnState(kDisconnected);
-    disableKeepalive();
+    checkDisableKeepalive();
     WS_LOG_WARNING("Retrying pending connection...");
     return reconnect();
 }
 
-void Client::reset() //immediate disconnect
+void Client::reset(const std::string& msg) //immediate disconnect
 {
     if (!mWebSocket)
     {
         assert(mConnState == kDisconnected);
         return;
     }
+    if (!mConnectPromise.done())
+        mConnectPromise.reject(msg);
+    if (!mLoginPromise.done())
+        mLoginPromise.reject(msg);
     setConnState(kDisconnecting);
     ws_close_immediately(mWebSocket);
     ws_destroy(&mWebSocket);
     setConnState(kDisconnected);
     assert(!mWebSocket);
 }
-
+void Client::checkEnableKeepalive()
+{
+    if (mKeepaliveEnabled)
+        return;
+    mKeepaliveEnabled = true;
+    enableKeepalive();
+}
+void Client::checkDisableKeepalive()
+{
+    if (!mKeepaliveEnabled)
+        return;
+    mKeepaliveEnabled = false;
+    disableKeepalive();
+}
 bool Client::sendBuf(Buffer&& buf)
 {
     if (!isOnline())
