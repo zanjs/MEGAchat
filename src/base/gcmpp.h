@@ -5,7 +5,6 @@
 
 #include "karereCommon.h"
 #include "gcm.h"
-#include "logger.h"
 #include <memory>
 #include <assert.h>
 
