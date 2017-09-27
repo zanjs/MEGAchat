@@ -500,7 +500,7 @@ border-image: url(':/fullscreen-hover.svg');
   <customwidget>
    <class>VideoRendererQt</class>
    <extends>QWidget</extends>
-   <header>videoRenderer_Qt.h</header>
+   <header>renderer/videoRenderer_Qt.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>
