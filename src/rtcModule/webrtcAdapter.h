@@ -12,7 +12,7 @@
 #include <pc/videotrack.h>
 #include <api/test/fakeconstraints.h>
 #include <api/jsepsessiondescription.h>
-#include "base/gcmpp.h"
+#include <appCtx.h>
 #include "karereCommon.h" //only for std::string on android
 #include "base/promise.h"
 #include "webrtcAsyncWaiter.h"
@@ -39,7 +39,7 @@ struct Identity
 extern Identity gLocalIdentity;
 
 /** Globally initializes the library */
-bool init(const Identity* identity, void *appCtx);
+bool init(karere::AppCtx& appCtx, const Identity* identity);
 /** De-initializes and cleans up the library and webrtc stack */
 void cleanup();
 bool isInitialized();

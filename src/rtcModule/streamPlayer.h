@@ -4,7 +4,7 @@
 #include <api/video/i420_buffer.h>
 #include <libyuv/convert.h>
 #include <IVideoRenderer.h>
-#include "base/gcm.h"
+#include <appCtx.h>
 #include "webrtcAdapter.h"
 #include <mutex>
 
@@ -12,10 +12,9 @@ namespace artc
 {
 typedef rtcModule::IVideoRenderer IVideoRenderer;
 
-class StreamPlayer: public rtc::VideoSinkInterface<webrtc::VideoFrame>
+class StreamPlayer: public rtc::VideoSinkInterface<webrtc::VideoFrame>, karere::AppCtxRef
 {
 protected:
-    void *appCtx;
     rtc::scoped_refptr<webrtc::AudioTrackInterface> mAudio;
     rtc::scoped_refptr<webrtc::VideoTrackInterface> mVideo;
     IVideoRenderer* mRenderer;
@@ -24,16 +23,12 @@ protected:
     std::mutex mMutex; //guards onMediaStart and mRenderer (stuff that is accessed by public API and by webrtc threads)
 public:
     IVideoRenderer* videoRenderer() const {return mRenderer;}
-    StreamPlayer(IVideoRenderer* renderer, void *ctx, webrtc::AudioTrackInterface* audio=nullptr,
+    StreamPlayer(karere::AppCtx& ctx, IVideoRenderer* renderer, webrtc::AudioTrackInterface* audio=nullptr,
     webrtc::VideoTrackInterface* video=nullptr)
-     :mAudio(audio), mVideo(video), mRenderer(renderer)
+     :AppCtxRef(ctx), mAudio(audio), mVideo(video), mRenderer(renderer){}
+    StreamPlayer(karere::AppCtx& ctx, IVideoRenderer *renderer, tspMediaStream stream)
+     :AppCtxRef(ctx), mRenderer(renderer)
     {
-        appCtx = ctx;
-    }
-    StreamPlayer(IVideoRenderer *renderer, tspMediaStream stream, void *ctx)
-     :mRenderer(renderer)
-    {
-        appCtx = ctx;
         attachToStream(stream);
     }
     ~StreamPlayer()
@@ -140,10 +135,10 @@ public:
             if (mOnMediaStart)
             {
                 auto callback = mOnMediaStart;
-                karere::marshallCall([callback]()
+                marshallCall([callback]()
                 {
                     callback();
-                }, appCtx);
+                });
             }
         }
         if (!mRenderer)

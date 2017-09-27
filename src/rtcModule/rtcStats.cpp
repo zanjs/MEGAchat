@@ -1,6 +1,6 @@
 #include "rtcStats.h"
 #include "webrtcPrivate.h"
-#include <timers.hpp>
+#include <appCtx.h>
 #include <string.h> //for memset
 #include <karereCommon.h> //for timestampMs()
 #include <chatClient.h>
@@ -71,7 +71,7 @@ void Recorder::BwCalculator::calculate(long periodMs, long newTotalBytes)
 void Recorder::OnComplete(const webrtc::StatsReports& data)
 {
     auto myData = std::make_shared<artc::MyStatsReports>(data);
-    marshallCall([this, myData]()
+    mSession.marshallCall([this, myData]()
     {
         try
         {
@@ -81,7 +81,7 @@ void Recorder::OnComplete(const webrtc::StatsReports& data)
         {
             KR_LOG_ERROR("Stats: %s", e.what());
         }
-    }, mSession.call().manager().client().appCtx);
+    });
 }
 
 void dumpStats(const artc::MyStatsReports& data)
@@ -236,16 +236,15 @@ void Recorder::start()
     mStats->mPeerAnonId = mSession.peerAnonId();
     mStats->mSper = mScanPeriod;
     mStats->mStartTs = karere::timestampMs();
-    mTimer = setInterval([this]()
+    mTimer = mSession.setInterval([this]()
     {
         //mSession.rtcConn()->GetStats(static_cast<webrtc::StatsObserver*>(this), nullptr, mStatsLevel);
-    }, mScanPeriod, mSession.call().manager().client().appCtx);
+    }, mScanPeriod);
 }
 
 void Recorder::terminate(const std::string& termRsn)
 {
-    cancelInterval(mTimer, mSession.call().manager().client().appCtx);
-    mTimer = 0;
+    mTimer.cancel();
     mStats->mDur = karere::timestampMs() - mStats->mStartTs;
     mStats->mTermRsn = termRsn;
     std::string json;
@@ -262,8 +261,7 @@ std::string Recorder::getStats(const StatSessInfo& info)
 
 Recorder::~Recorder()
 {
-    if (mTimer)
-        cancelInterval(mTimer, mSession.call().manager().client().appCtx);
+    mTimer.cancel();
 }
 
 const char* decToString(float v)

@@ -17,7 +17,7 @@ static bool gIsInitialized = false;
 AsyncWaiter* gAsyncWaiter = nullptr;
 
 bool isInitialized() { return gIsInitialized; }
-bool init(const Identity* identity, void *appCtx)
+bool init(karere::AppCtx& appCtx, const Identity* identity)
 {
     if (gIsInitialized)
         return false;

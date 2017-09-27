@@ -620,7 +620,7 @@ public:
         kInitErrSidInvalid
     };
 
-    ws::IO *websocketIO;
+    ws::IO& websocketIO;
     SqliteDb db;
     std::unique_ptr<chatd::Client> chatd;
     MyMegaApi api;
@@ -668,7 +668,7 @@ public:
      * inconsistent, karere will behave as if \c false was specified - will
      * delete the karere.db file and re-create it from scratch.
      */
-    Client(::mega::MegaApi& sdk, ws::IO *websocketsIO, IApp& app, const std::string& appDir,
+    Client(::mega::MegaApi& sdk, ws::IO& websocketsIO, IApp& app, const std::string& appDir,
            uint8_t caps, AppCtx& ctx);
 
     virtual ~Client();

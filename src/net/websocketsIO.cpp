@@ -3,13 +3,16 @@ namespace ws
 {
 IO::IO(::mega::Mutex *mutex, karere::AppCtx& ctx)
     : AppCtxRef(ctx), mMutex(mutex)
-{}
+{
+    if (mutex)
+        abort();
+}
 
 IO::~IO()
 {}
 
 Socket::Socket(ws::wsClient& client, EventHandler *handler)
- : mClient(client), mHandler(handler)
+ : mClient(client), mHandler(handler), mMutex(client.mIO.mMutex)
 {}
 
 class ScopedLock
@@ -34,10 +37,11 @@ public:
 
 void Socket::wsConnectCb()
 {
-//    ScopedLock lock(mMutex);
-    WEBSOCKETS_LOG_DEBUG("Connection established");
-    if (std::this_thread::get_id() == mClient.mThreadId)
+    ScopedLock lock(mMutex);
+    WS_LOG_DEBUG("Connection established");
+    if (std::this_thread::get_id() == mClient.postThreadId())
     {
+        assert(false);
         mHandler->wsConnectCb();
     }
     else
@@ -54,24 +58,20 @@ void Socket::wsConnectCb()
 
 void Socket::wsCloseCb(int errcode, int errtype, const char *preason, size_t reason_len)
 {
-//    ScopedLock lock(mMutex);
-    WEBSOCKETS_LOG_DEBUG("Connection closed");
-    if (std::this_thread::get_id() == mClient.mThreadId)
+    ScopedLock lock(mMutex);
+    WS_LOG_DEBUG("Connection closed");
+    std::string reason;
+    if (preason)
     {
-        std::string reason;
-        if (preason)
-        {
-            reason.assign(preason, reason_len);
-        }
+        reason.assign(preason, reason_len);
+    }
+    if (std::this_thread::get_id() == mClient.postThreadId())
+    {
+        assert(false);
         mHandler->wsCloseCb(errcode, errtype, reason);
     }
     else
     {
-        std::string reason;
-        if (preason)
-        {
-            reason.assign(preason, reason_len);
-        }
         auto wptr = weakHandle();
         mClient.marshallCall([wptr, this, errcode, errtype, reason]
         {
@@ -84,10 +84,10 @@ void Socket::wsCloseCb(int errcode, int errtype, const char *preason, size_t rea
 
 void Socket::wsHandleMsgCb(std::string&& data)
 {
-//    ScopedLock lock(mMutex);
-    WEBSOCKETS_LOG_DEBUG("Received %zu bytes", data.size());
-    if (std::this_thread::get_id() == mClient.mThreadId)
+    ScopedLock lock(mMutex);
+    if (std::this_thread::get_id() == mClient.postThreadId())
     {
+        assert(false);
         mHandler->wsHandleMsgCb(std::forward<std::string>(data));
     }
     else
@@ -103,17 +103,15 @@ void Socket::wsHandleMsgCb(std::string&& data)
     }
 }
 
-wsClient::wsClient(karere::AppCtx& ctx): AppCtxRef(ctx), mSocket(NULL){}
+wsClient::wsClient(IO& io, karere::AppCtx& ctx): AppCtxRef(ctx), mIO(io), mSocket(NULL){}
 
-bool wsClient::wsConnect(IO *io, const char *ip, const char *host, int port, const char *path, bool ssl)
+bool wsClient::wsConnect(const char *ip, const char *host, int port, const char *path, bool ssl)
 {
-    mThreadId = std::this_thread::get_id();
-    
-    WEBSOCKETS_LOG_DEBUG("Connecting to %s (%s)  port %d  path: %s   ssl: %d", host, ip, port, path, ssl);
-    mSocket = io->connect(*this, ip, host, port, path, ssl, this);
+    WS_LOG_DEBUG("Connecting to %s (%s), port %d, path: %s, ssl: %d", host, ip, port, path, ssl);
+    mSocket = mIO.connect(*this, ip, host, port, path, ssl, this);
     if (!mSocket)
     {
-        WEBSOCKETS_LOG_WARNING("Immediate error in wsConnect");
+        WS_LOG_WARNING("Immediate error in wsConnect");
     }
     return mSocket != NULL;
 }
@@ -122,32 +120,55 @@ bool wsClient::wsSendMessage(char *msg, size_t len)
 {
     if (!mSocket)
     {
-        WEBSOCKETS_LOG_ERROR("Trying to send a message without a previous initialization");
+        WS_LOG_ERROR("Trying to send a message without a previous initialization");
         return false;
     }
 
-    assert (std::this_thread::get_id() == mThreadId);
-    
-    WEBSOCKETS_LOG_DEBUG("Sending %d bytes", len);
-    bool result = mSocket->sendMessage(msg, len);
-    if (!result)
+    WS_LOG_DEBUG("Sending %d bytes", len);
+
+    if (std::this_thread::get_id() == waiter().loopThreadId())
     {
-        WEBSOCKETS_LOG_WARNING("Immediate error in wsSendMessage");
+        bool result = mSocket->sendMessage(msg, len);
+        if (!result)
+        {
+            WS_LOG_WARNING("wsClient::wsSendMessage: Immediate error");
+        }
+        return result;
     }
-    return result;
+    else
+    {
+       return waiter().execSync([this, msg, len]()
+       {
+           bool result = mSocket->sendMessage(msg, len);
+           if (!result)
+           {
+               WS_LOG_WARNING("wsClient::wsSendMessage: Immediate error");
+           }
+           return result;
+       });
+    }
 }
 
 void wsClient::wsDisconnect(bool immediate)
 {
-    WEBSOCKETS_LOG_DEBUG("Disconnecting. Immediate: %d", immediate);
-    
+    WS_LOG_DEBUG("Disconnecting. Immediate: %d", immediate);
     if (!mSocket)
     {
+        WS_LOG_WARNING("wsClient::wsDisconnect: No socket");
         return;
     }
     
-    assert (std::this_thread::get_id() == mThreadId);
-    mSocket->disconnect(immediate);
+    if (std::this_thread::get_id() == waiter().loopThreadId())
+    {
+        mSocket->disconnect(immediate);
+    }
+    else
+    {
+        waiter().execSync([this, immediate]()
+        {
+            mSocket->disconnect(immediate);
+        });
+    }
 }
 
 bool wsClient::wsIsConnected()
@@ -156,8 +177,8 @@ bool wsClient::wsIsConnected()
     {
         return false;
     }
-    
-    assert (std::this_thread::get_id() == mThreadId);
+//mSocket::isConnected must marshall the call if it needs to. But generally this
+//would just read a flag, so marshalling is not done by default
     return mSocket->isConnected();
 }
 

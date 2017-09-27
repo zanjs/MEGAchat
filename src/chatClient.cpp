@@ -59,7 +59,7 @@ std::string encodeFirstName(const std::string& first);
  * init() is called. Therefore, no code in this constructor should access or
  * depend on the database
  */
-Client::Client(::mega::MegaApi& sdk, ws::IO* websocketsIO, IApp& aApp, const std::string& appDir, uint8_t caps, AppCtx& ctx)
+Client::Client(::mega::MegaApi& sdk, ws::IO& websocketsIO, IApp& aApp, const std::string& appDir, uint8_t caps, AppCtx& ctx)
     : AppCtxRef(ctx),
       mAppDir(appDir),
       websocketIO(websocketsIO),
@@ -774,8 +774,11 @@ promise::Promise<void> Client::doConnect(Presence pres)
     });
     assert(!mHeartbeatTimer);
     auto wptr = weakHandle();
-    mHeartbeatTimer = setInterval([this, wptr]()
+    uint32_t magic = 0xabcdef01;
+    mHeartbeatTimer = setInterval([this, wptr, magic]()
     {
+        assert(magic == 0xabcdef01);
+
         if (wptr.deleted())
         {
             return;

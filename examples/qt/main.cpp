@@ -44,6 +44,7 @@ public:
     libwebsockets::IO mWebsocketIO;
     AppDelegate(): AppCtx(new LibuvWaiter), mWebsocketIO(nullptr, *this)
     {
+        setPostThread();
         mWebsocketIO.registerWithEventLoop(waiter().loop());
     }
     void postMessage(MarshallMessage* msg)
@@ -64,7 +65,7 @@ public:
         mThread.reset(new std::thread(
         [this]()
         {
-            waiter().setLoopThreadId();
+            waiter().setLoopThread();
             KR_LOG_DEBUG("Starting event loop...");
             uv_run(waiter().loop(), UV_RUN_DEFAULT);
             KR_LOG_DEBUG("Eventloop terminated");
@@ -101,7 +102,7 @@ void createWindowAndClient()
     gSdk.reset(new ::mega::MegaApi("karere-native", gAppDir.c_str(), "Karere Native"));
 
     // Websockets network layer based on libws
-    gClient.reset(new karere::Client(*gSdk, &appDelegate.mWebsocketIO, *mainWin, gAppDir, 0, appDelegate));
+    gClient.reset(new karere::Client(*gSdk, appDelegate.mWebsocketIO, *mainWin, gAppDir, 0, appDelegate));
     mainWin->setClient(*gClient);
     QObject::connect(mainWin, SIGNAL(esidLogout()), &appDelegate, SLOT(onEsidLogout()));
 }

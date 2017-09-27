@@ -63,7 +63,7 @@ void IO::addevents(::mega::Waiter* waiter, int)
 void IO::registerWithEventLoop(void* eventloop)
 {
     lws_uv_initloop(wscontext, (uv_loop_t*)eventloop, 0);
-    WEBSOCKETS_LOG_DEBUG("Libwebsockets is using libuv");
+    WS_LOG_DEBUG("Libwebsockets is using libuv");
     mIsInitialized = true;
 }
 
@@ -164,24 +164,24 @@ void Socket::disconnect(bool immediate)
         struct lws *dwsi = wsi;
         wsi = NULL;
         lws_set_wsi_user(dwsi, NULL);
-        WEBSOCKETS_LOG_DEBUG("Pointer detached from libwebsockets");
+        WS_LOG_DEBUG("Pointer detached from libwebsockets");
         
         if (!disconnecting)
         {
             lws_callback_on_writable(dwsi);
-            WEBSOCKETS_LOG_DEBUG("Requesting a forced disconnection to libwebsockets");
+            WS_LOG_DEBUG("Requesting a forced disconnection to libwebsockets");
         }
         else
         {
             disconnecting = false;
-            WEBSOCKETS_LOG_DEBUG("Already disconnecting from libwebsockets");
+            WS_LOG_DEBUG("Already disconnecting from libwebsockets");
         }
     }
     else
     {
         disconnecting = true;
         lws_callback_on_writable(wsi);
-        WEBSOCKETS_LOG_DEBUG("Requesting a graceful disconnection to libwebsockets");
+        WS_LOG_DEBUG("Requesting a graceful disconnection to libwebsockets");
     }
 }
 
@@ -302,11 +302,11 @@ int Socket::wsCallback(struct lws *wsi, enum lws_callback_reasons reason,
             auto self = static_cast<Socket*>(user);
             if (!self)
             {
-                WEBSOCKETS_LOG_DEBUG("Forced disconnect completed");
+                WS_LOG_DEBUG("Forced disconnect completed");
                 return -1;
             }
 
-            WEBSOCKETS_LOG_DEBUG("Graceful disconnect completed");
+            WS_LOG_DEBUG("Graceful disconnect completed");
             self->disconnecting = false;
             self->wsCloseCb(0, 0, "", 0);
             break;
@@ -321,24 +321,24 @@ int Socket::wsCallback(struct lws *wsi, enum lws_callback_reasons reason,
             }
 
             const size_t remaining = lws_remaining_packet_payload(wsi);
+            self->appendMessageFragment((char *)data, len, remaining);
+
             if (!remaining && lws_is_final_fragment(wsi))
             {
                 if (self->hasFragments())
                 {
-                    WEBSOCKETS_LOG_DEBUG("Fragmented data completed");
-                    self->appendMessageFragment((char *)data, len, 0);
+                    WS_LOG_DEBUG("Fragmented data completed");
+                    // We send the (rvalue ref) string itself to the callback, because if it needs
+                    // to post it to another thread, the string would avoid copying of the data
+                    self->wsHandleMsgCb(std::forward<std::string>(self->recbuffer));
+                    // After  a std::move, the source is left in valid, but unspecified state.
+                    // We must clear it
+                    self->resetMessage();
                 }
-                // We send the (rvalue ref) string itself to the callback, because if it needs
-                // to post it to another thread, the string would avoid copying of the data
-                self->wsHandleMsgCb(std::forward<std::string>(self->recbuffer));
-                // After  a std::move, the source is left in valid, but unspecified state.
-                // We must clear it
-                self->resetMessage();
             }
             else
             {
-                WEBSOCKETS_LOG_DEBUG("Managing fragmented data");
-                self->appendMessageFragment((char *)data, len, remaining);
+                WS_LOG_DEBUG("Managing fragmented data");
             }
             break;
         }
@@ -347,13 +347,13 @@ int Socket::wsCallback(struct lws *wsi, enum lws_callback_reasons reason,
             auto* self = static_cast<Socket*>(user);
             if (!self)
             {
-                WEBSOCKETS_LOG_DEBUG("Completing forced disconnect");
+                WS_LOG_DEBUG("Completing forced disconnect");
                 return -1;
             }
 
             if (self->disconnecting)
             {
-                WEBSOCKETS_LOG_DEBUG("Completing graceful disconnect");
+                WS_LOG_DEBUG("Completing graceful disconnect");
                 return -1;
             }
             

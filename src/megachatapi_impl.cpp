@@ -958,7 +958,7 @@ int MegaChatApiImpl::init(const char *sid)
     sdkMutex.lock();
     if (!mClient)
     {
-        mClient = new karere::Client(*this->megaApi, websocketsIO, *this, this->megaApi->getBasePath(), karere::kClientIsMobile, *this);
+        mClient = new karere::Client(*this->megaApi, *websocketsIO, *this, this->megaApi->getBasePath(), karere::kClientIsMobile, *this);
         terminating = false;
     }
 

@@ -265,7 +265,7 @@ promise::Promise<void> GelbProvider<S>::exec(unsigned timeoutMs, unsigned maxRet
         std::string json((const char*)result->getText(), result->getTotalBytes());
         parseServersJson(json);
         this->mNextAssignIdx = 0; //notify about updated servers only if parse didn't throw
-        this->mLastUpdateTs = services_get_time_ms();
+        this->mLastUpdateTs = karere::timestampMs();
         return promise::_Void();
     })
     .fail([this](const promise::Error& err)
@@ -287,7 +287,7 @@ promise::Promise<void> GelbProvider<S>::fetchServers(unsigned timeoutMs, unsigne
     mOutputPromise = pms
     .fail([this](const promise::Error& err) -> promise::Promise<void>
     {
-        if (!this->mLastUpdateTs || ((services_get_time_ms() - mLastUpdateTs)/1000 > mMaxReuseOldServersAge))
+        if (!this->mLastUpdateTs || ((karere::timestampMs() - mLastUpdateTs)/1000 > mMaxReuseOldServersAge))
         {
             return err;
         }

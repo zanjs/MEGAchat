@@ -88,10 +88,13 @@ void LibuvWaiter::ctrlSendCommand(CmdBase* cmd)
 
 void LibuvWaiter::timerDel(void*& timer)
 {
-    assert(timer);
-    uv_timer_stop((uv_timer_t*)timer);
-    uv_close((uv_handle_t*)timer, NULL);
-    delete (uv_handle_t*)timer;
+    execSync([this, &timer]()
+    {
+        assert(timer);
+        uv_timer_stop((uv_timer_t*)timer);
+        uv_close((uv_handle_t*)timer, NULL);
+        delete (uv_handle_t*)timer;
+    });
     timer = nullptr;
 }
 
@@ -109,6 +112,10 @@ void* LibuvWaiter::timerAdd(uint64_t period, bool repeat, karere::TimerMessage* 
         }, period, repeat ? period : 0);
         return (void*)t;
     });
+}
+int64_t timestampMs()
+{
+    return uv_hrtime() / 1000000; //nanoseconds to milliseconds
 }
 
 } // namespace

@@ -33,7 +33,7 @@ protected:
     std::string mName;
     ISessionHandler* mHandler;
     std::unique_ptr<stats::Recorder> mStatRecorder;
-    megaHandle mSetupTimer = 0;
+    karere::TimerHandle mSetupTimer;
     time_t mTsIceConn = 0;
     promise::Promise<void> mTerminatePromise;
     bool mVideoReceived = false;
@@ -87,10 +87,10 @@ protected:
     std::map<chatd::EndpointId, int> mSessRetries;
     std::unique_ptr<std::set<karere::Id>> mRingOutUsers;
     std::string mName;
-    megaHandle mCallOutTimer = 0;
+    karere::TimerHandle mCallOutTimer;
     bool mCallStartingSignalled = false;
     bool mCallStartedSignalled = false;
-    megaHandle mInCallPingTimer = 0;
+    karere::TimerHandle mInCallPingTimer;
     promise::Promise<void> mDestroyPromise;
     std::shared_ptr<artc::LocalStreamHandle> mLocalStream;
     std::shared_ptr<artc::StreamPlayer> mLocalPlayer;

@@ -21,17 +21,16 @@ namespace artc
  * asynchronous way, but mimics the normal behaviour of webrtc threads, so the GUI
  * thread looks to webrtc like a normal webrtc thread with a blocking message loop.
  */
-class AsyncWaiter: public rtc::SocketServer
+class AsyncWaiter: public rtc::SocketServer, public karere::AppCtxRef
 {
 protected:
-    void *appCtx;
     std::mutex mMutex;
     std::condition_variable mCondVar;
     volatile bool mSignalled = false;
     rtc::Thread* mThread = nullptr;
     rtc::MessageQueue* mMessageQueue = nullptr;
 public:
-    AsyncWaiter(void *ctx) : appCtx(ctx) { }
+    AsyncWaiter(karere::AppCtx& ctx) : AppCtxRef(ctx) { }
     rtc::Thread* guiThread() const { return mThread; }
     void setThread(rtc::Thread* thread) { mThread = thread; }
 //rtc::SocketFactory interface
@@ -89,7 +88,7 @@ virtual void WakeUp()
     if (!mMessageQueue->empty()) //process messages and wake up waiters again
     {
         ASYNCWAITER_LOG_DEBUG("  WakeUp(): Message queue not empty, posting ProcessMessages(0) call on GUI thread");
-        karere::marshallCall([this]()
+        marshallCall([this]()
         {
             if (mThread->ProcessMessages(0))
             { //signal once again that we have messages processed
@@ -101,7 +100,7 @@ virtual void WakeUp()
             {
                 ASYNCWAITER_LOG_DEBUG("  WakeUp: GUI thread: No messages in queue, someone processed them before us");
             }
-        }, appCtx);
+        });
     }
     //If the GUI thread is waiting, we must wake it up to process messages if any.
     //If it processes any messages, it will signal the condvar once again

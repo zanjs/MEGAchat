@@ -41,7 +41,7 @@ typedef uint8_t TermCode;
 #include <trackDelete.h>
 #include <serverListProviderForwards.h>
 #include <IRtcCrypto.h>
-
+#include <appCtx.h>
 namespace chatd
 {
     class Connection;
@@ -185,7 +185,7 @@ public:
     virtual bool isGroupChat(karere::Id chatid) = 0;
 };
 
-class ISession: public karere::DeleteTrackable
+class ISession: public karere::DeleteTrackable, public karere::AppCtxRef
 {
 protected:
     Call& mCall;
@@ -196,7 +196,7 @@ protected:
     karere::Id mPeerAnonId;
     uint32_t mPeerClient;
     karere::AvFlags mPeerAv;
-    ISession(Call& call, karere::Id peer, uint32_t peerClient): mCall(call), mPeer(peer), mPeerClient(peerClient){}
+    ISession(Call& call, karere::Id peer, uint32_t peerClient);
 public:
     enum: uint8_t
     {
@@ -216,7 +216,7 @@ public:
     karere::AvFlags receivedAv() const { return mPeerAv; }
 };
 
-class ICall: public karere::WeakReferenceable<ICall>
+class ICall: public karere::WeakReferenceable<ICall>, public karere::AppCtxRef
 {
 public:
     enum: uint8_t
@@ -244,11 +244,7 @@ protected:
     uint32_t mCallerClient;
     ICall(RtcModule& rtcModule, chatd::Chat& chat,
         karere::Id callid, bool isGroup, bool isJoiner, ICallHandler* handler,
-        karere::Id callerUser, uint32_t callerClient)
-    : WeakReferenceable<ICall>(this), mManager(rtcModule),
-      mChat(chat), mId(callid), mIsGroup(isGroup), mIsJoiner(isJoiner),
-      mHandler(handler), mCallerUser(callerUser), mCallerClient(callerClient)
-    {}
+        karere::Id callerUser, uint32_t callerClient);
 public:
     chatd::Chat& chat() const { return mChat; }
     RtcModule& manager() const { return mManager; }
@@ -288,7 +284,7 @@ struct VidEncParams
 };
 
 /** @brief This is the public interface of the RtcModule */
-class IRtcModule: public karere::DeleteTrackable
+class IRtcModule: public karere::DeleteTrackable, public karere::AppCtxRef
 {
 protected:
     karere::Client& mClient;
@@ -298,9 +294,8 @@ protected:
     std::string mVideoInDeviceName;
     std::string mAudioInDeviceName;
     IRtcModule(karere::Client& client, IGlobalHandler& handler, IRtcCrypto* crypto,
-        karere::Id ownAnonId)
-    : mClient(client), mHandler(handler), mCrypto(crypto), mOwnAnonId(ownAnonId) {}
-public:
+        karere::Id ownAnonId);
+    public:
     karere::Client& client() const { return mClient; }
     /** @brief Default video encoding parameters. */
     VidEncParams vidEncParams;

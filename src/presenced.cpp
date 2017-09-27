@@ -29,7 +29,7 @@ namespace presenced
 {
 
 Client::Client(MyMegaApi *api, karere::Client& client, Listener& listener, uint8_t caps)
-: wsClient(client), mListener(&listener), karereClient(client), mApi(api), mCapabilities(caps)
+: wsClient(client.websocketIO, client), mListener(&listener), karereClient(client), mApi(api), mCapabilities(caps)
 {}
 
 promise::Promise<void>
@@ -206,7 +206,7 @@ Client::reconnect(const std::string& url)
                 setConnState(kConnecting);
                 string ip = result->getText();
                 PRESENCED_LOG_DEBUG("Connecting to presenced using the IP: %s", ip.c_str());
-                bool rt = wsConnect(karereClient.websocketIO, ip.c_str(),
+                bool rt = wsConnect(ip.c_str(),
                           mUrl.host.c_str(),
                           mUrl.port,
                           mUrl.path.c_str(),

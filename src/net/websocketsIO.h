@@ -9,10 +9,10 @@
 #include <mega/thread.h> //for mega::Mutex
 #include <logger.h>
 
-#define WEBSOCKETS_LOG_DEBUG(fmtString,...) KARERE_LOG_DEBUG(krLogChannel_websockets, fmtString, ##__VA_ARGS__)
-#define WEBSOCKETS_LOG_INFO(fmtString,...) KARERE_LOG_INFO(krLogChannel_websockets, fmtString, ##__VA_ARGS__)
-#define WEBSOCKETS_LOG_WARNING(fmtString,...) KARERE_LOG_WARNING(krLogChannel_websockets, fmtString, ##__VA_ARGS__)
-#define WEBSOCKETS_LOG_ERROR(fmtString,...) KARERE_LOG_ERROR(krLogChannel_websockets, fmtString, ##__VA_ARGS__)
+#define WS_LOG_DEBUG(fmtString,...) KARERE_LOG_DEBUG(krLogChannel_websockets, fmtString, ##__VA_ARGS__)
+#define WS_LOG_INFO(fmtString,...) KARERE_LOG_INFO(krLogChannel_websockets, fmtString, ##__VA_ARGS__)
+#define WS_LOG_WARNING(fmtString,...) KARERE_LOG_WARNING(krLogChannel_websockets, fmtString, ##__VA_ARGS__)
+#define WS_LOG_ERROR(fmtString,...) KARERE_LOG_ERROR(krLogChannel_websockets, fmtString, ##__VA_ARGS__)
 
 namespace ws
 {
@@ -34,7 +34,8 @@ protected:
     // It must be only used from wsClient
     virtual Socket *connect(wsClient& client, const char *ip, const char *host, int port,
             const char *path, bool ssl, EventHandler *handler) = 0;
-    friend wsClient;
+    friend class wsClient;
+    friend class Socket;
 };
 
 /** @brief Event handler interface that receives events from a websocket client
@@ -53,13 +54,13 @@ public:
 class wsClient: public EventHandler, public karere::AppCtxRef
 {
 protected:
+    IO& mIO;
     Socket* mSocket;
-    std::thread::id mThreadId;
     friend class Socket; //needs access to mThreadId
 public:
-    wsClient(karere::AppCtx& ctx);
-    bool wsConnect(IO *io, const char *ip,
-                   const char *host, int port, const char *path, bool ssl);
+    wsClient(IO& io, karere::AppCtx& ctx);
+    bool wsConnect(const char *ip, const char *host, int port, const char *path,
+        bool ssl);
     bool wsSendMessage(char *msg, size_t len);  // returns true on success, false if error
     void wsDisconnect(bool immediate);
     bool wsIsConnected();

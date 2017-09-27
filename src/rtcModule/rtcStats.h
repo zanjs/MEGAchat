@@ -3,7 +3,7 @@
 #include "webrtcAdapter.h"
 #include "IRtcStats.h"
 #include "ITypesImpl.h"
-#include <timers.hpp>
+#include <appCtx.h>
 #include <karereId.h>
 
 namespace rtcModule
@@ -105,7 +105,7 @@ protected:
             webrtc::PeerConnectionInterface::kStatsOutputLevelStandard;
     std::unique_ptr<Sample> mCurrSample;
     bool mHasConnInfo = false;
-    megaHandle mTimer = 0;
+    karere::TimerHandle mTimer;
     BwCalculator mVideoRxBwCalc;
     BwCalculator mVideoTxBwCalc;
     BwCalculator mAudioRxBwCalc;

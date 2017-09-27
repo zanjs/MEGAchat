@@ -185,7 +185,8 @@ void Chat::login()
 }
 
 Connection::Connection(::chatd::Client& client, int shardNo)
-: wsClient(client), mClient(client), mShardNo(shardNo),
+: wsClient(client.karereClient.websocketIO, client), mClient(client),
+  mShardNo(shardNo),
   mIdentity((static_cast<uint64_t>(rand()) << 32) | time(NULL))
 {}
 
@@ -300,7 +301,7 @@ Promise<void> Connection::reconnect(const std::string& url)
                 mState = kStateConnecting;
                 string ip = result->getText();
                 CHATD_LOG_DEBUG("Connecting to chatd (shard %d) using the IP: %s", mShardNo, ip.c_str());
-                bool rt = wsConnect(mClient.karereClient.websocketIO, ip.c_str(),
+                bool rt = wsConnect(ip.c_str(),
                           mUrl.host.c_str(),
                           mUrl.port,
                           mUrl.path.c_str(),
