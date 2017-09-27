@@ -1,9 +1,8 @@
-#include "libwebsocketsIO.h"
-#include "../waiter/libuvWaiter.h"
-
+#include <waiter/karereWaiter.h>
 #include <mega/http.h>
 #include <assert.h>
-#include "libwebsocketsIO.h"
+#include "wsIO.h"
+#include "wsIO-libwebsockets.h"
 
 using namespace std;
 namespace libwebsockets

@@ -2,7 +2,7 @@
 #define CHATWINDOW_H
 
 #include <QDialog>
-#include <chatd.h>
+#include <chatd/chatd.h>
 #include <ui_chat.h>
 #include <ui_chatmessage.h>
 #include <ui_manualSendMsg.h>
@@ -16,7 +16,7 @@
 #include <QProgressBar>
 #include <QMimeData>
 #include <QToolTip>
-#include <chatdDb.h>
+#include <chatd/chatdDb.h>
 #include <chatClient.h>
 #include <mega/base64.h> //for jid base32 conversion
 #include <strongvelope/strongvelope.h>

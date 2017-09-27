@@ -1,6 +1,6 @@
 #ifndef KR_APP_CTX_H
 #define KR_APP_CTX_H
-#include "../waiter/karereWaiter.h"
+#include "waiter/karereWaiter.h"
 namespace karere
 {
 class AppCtx;

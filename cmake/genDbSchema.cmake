@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 
-file(READ "${CMAKE_CURRENT_LIST_DIR}/dbSchema.sql" dbschema_raw)
+file(READ "${CMAKE_CURRENT_LIST_DIR}/../src/dbSchema.sql" dbschema_raw)
 string(REGEX REPLACE "([^\r\n]*)[\r\n]+" "\"\\1\"\n" dbschema "${dbschema_raw}")
 
 string(REGEX REPLACE "[ \t\r\n]" "" dbschema_for_hash "${dbschema_raw}")

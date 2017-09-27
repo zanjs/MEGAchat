@@ -2,7 +2,7 @@
 #define ICRYPTO_H
 #include <appCtx.h>
 #include <promise.h>
-#include <chatd.h>
+#include "chatd.h"
 
 namespace chatd
 {

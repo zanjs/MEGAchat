@@ -38,7 +38,7 @@
 
 #include "megachatapi_impl.h"
 #include <base/logger.h>
-#include <IGui.h>
+#include <IApp.h>
 #include <chatClient.h>
 #include <mega/base64.h>
 

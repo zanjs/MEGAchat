@@ -4,7 +4,7 @@
 #include <karereId.h>
 #include "IRtcStats.h"
 #include <serverListProvider.h>
-#include <chatd.h>
+#include <chatd/chatd.h>
 #include <base/trackDelete.h>
 #include <streamPlayer.h>
 

@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(karere)
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR})
-
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cmake")
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Release Debug)
 
 if (NOT CMAKE_BUILD_TYPE)
@@ -9,7 +8,7 @@ if (NOT CMAKE_BUILD_TYPE)
     message(STATUS "Build type not set, defaulting to Debug")
 endif()
 
-include (utils.cmake)
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/utils.cmake")
 
 set(optKarereBuildShared 0 CACHE BOOL "Build libkarere as a shared library")
 set(optKarereDisableWebrtc 1 CACHE BOOL "Disable webrtc")
@@ -30,13 +29,13 @@ set (SRCS
     chatClient.cpp
     userAttrCache.cpp
     url.cpp
-    chatd.cpp
+    chatd/chatd.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/karereDbSchema.cpp
     strongvelope/strongvelope.cpp
     presenced.cpp
     megachatapi.cpp
     megachatapi_impl.cpp    
-    net/websocketsIO.cpp
+    net/wsIO.cpp
 )
 
 if (NOT optKarereDisableWebrtc)
@@ -72,14 +71,14 @@ else()
     list(APPEND KARERE_DEFINES -DKARERE_DISABLE_WEBRTC=1)
 endif()
 if (optServicesUseLibuv)
-    list(APPEND SRCS net/libwebsocketsIO.cpp)
+    list(APPEND SRCS net/wsIO-libwebsockets.cpp)
     find_package(LibWebSockets REQUIRED)
     set(WEBSOCK_INCLUDE_DIRS ${LIBWEBSOCKETS_INCLUDE_DIR})
     set(WEBSOCK_LIBS ${LIBWEBSOCKETS_LIBRARIES})
     message(STATUS "Using libUV and libwebsockets")
 else()
     set(LIBWS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/libws CACHE PATH "libws source dir, where its CMakeLists.txt is located")
-    list(APPEND SRCS net/libwsIO.cpp)
+    list(APPEND SRCS net/wsIO-libws.cpp)
     add_subdirectory(${LIBWS_DIR} libws)
     set(WEBSOCK_INCLUDE_DIRS ${LIBWS_DIR}/src ${CMAKE_CURRENT_BINARY_DIR}/libws)
     set(WEBSOCK_LIBS ws)
@@ -88,9 +87,10 @@ endif()
 
 get_property(SERVICES_INCLUDE_DIRS GLOBAL PROPERTY SERVICES_INCLUDE_DIRS)
 
+set(genDbSchema "${CMAKE_CURRENT_LIST_DIR}/../cmake/genDbSchema.cmake")
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/karereDbSchema.cpp
-    COMMAND ${CMAKE_COMMAND} -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/genDbSchema.cmake
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/dbSchema.sql ${CMAKE_CURRENT_SOURCE_DIR}/genDbSchema.cmake
+    COMMAND ${CMAKE_COMMAND} -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -P ${genDbSchema}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/dbSchema.sql ${genDbSchema}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

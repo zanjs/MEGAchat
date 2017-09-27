@@ -84,9 +84,9 @@ public:
 };
 }
 #ifdef KR_USE_LIBWEBSOCKETS
-#include "libwebsocketsIO.h"
+#include "wsIO-libwebsockets.h"
 #else
-#include "libwsIO.h"
+#include "wsIO-libws.h"
 #endif
 
 #endif /* websocketsIO_h */

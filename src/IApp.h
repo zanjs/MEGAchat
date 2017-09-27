@@ -1,9 +1,9 @@
 #ifndef IAPP_H
 #define IAPP_H
-#include <webrtc.h>
-#include <chatd.h>
-#include <presenced.h>
-#include <autoHandle.h>
+#include "rtcModule/webrtc.h"
+#include "chatd/chatd.h"
+#include "presenced.h"
+#include "autoHandle.h"
 
 namespace karere
 {

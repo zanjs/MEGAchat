@@ -33,13 +33,13 @@
 #include <rtcModule/webrtc.h>
 #include <IVideoRenderer.h>
 #include <chatClient.h>
-#include <chatd.h>
+#include "chatd/chatd.h"
 #include <sdkApi.h>
 //#include <mstrophepp.h>
 #include <karereCommon.h>
 #include <logger.h>
 
-#include "net/websocketsIO.h"
+#include "net/wsIO.h"
 
 #include <stdint.h>
 
@@ -47,10 +47,10 @@
 typedef karere::KarereWaiter MegaChatWaiter;
 
 #ifdef KR_USE_LIBWEBSOCKETS
-    #include "net/libwebsocketsIO.h"
+    #include "net/wsIO-libwebsockets.h"
     typedef libwebsockets::IO MegaWebsocketsIO;
 #else
-    #include "net/libwsIO.h"
+    #include "net/wsIO-libws.h"
     typedef LibwsIO MegaWebsocketsIO;
 #endif
 

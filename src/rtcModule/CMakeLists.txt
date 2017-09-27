@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(rtcModule)
-include (../utils.cmake)
+include ("${CMAKE_CURRENT_LIST_DIR}/../../cmake/utils.cmake")
 
 set(optRtcModuleBuildShared 0 CACHE BOOL "Whether to build rtcModule as a shared lib")
 set (SRCS

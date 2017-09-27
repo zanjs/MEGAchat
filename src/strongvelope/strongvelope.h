@@ -14,8 +14,8 @@
 #include <iostream>
 #include <buffer.h>
 #include <karereId.h>
-#include <chatdMsg.h>
-#include <chatdICrypto.h>
+#include <chatd/chatdMsg.h>
+#include <chatd/chatdICrypto.h>
 #include <promise.h>
 #include <logger.h>
 #include <karereCommon.h>

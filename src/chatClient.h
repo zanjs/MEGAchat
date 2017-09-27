@@ -10,10 +10,10 @@
 #include <serverListProviderForwards.h>
 #include "userAttrCache.h"
 #include <db.h>
-#include "chatd.h"
+#include "chatd/chatd.h"
 #include "presenced.h"
-#include "IGui.h"
-#include "net/websocketsIO.h"
+#include "IApp.h"
+#include "net/wsIO.h"
 #include <base/trackDelete.h>
 #include "rtcModule/webrtc.h"
 

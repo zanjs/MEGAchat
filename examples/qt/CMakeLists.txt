@@ -22,7 +22,7 @@ set (SRCS
      res/resources.qrc
 )
 if (NOT optKarereDisableWebrtc)
-    list(APPEND SRCS callGui.cpp ../../src/videoRenderer_Qt.cpp)
+    list(APPEND SRCS callGui.cpp ../../src/renderer/videoRenderer_Qt.cpp)
 endif()
 
 

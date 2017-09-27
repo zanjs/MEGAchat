@@ -16,14 +16,13 @@
 #include <string.h>
 #include "rtcModule/webrtc.h"
 #include "rtcCrypto.h"
-#include "dummyCrypto.h" //for makeRandomString
 #include "sdkApi.h"
 #include <serverListProvider.h>
 #include <memory>
-#include <chatd.h>
+#include "chatd/chatd.h"
 #include <db.h>
 #include <buffer.h>
-#include <chatdDb.h>
+#include "chatd/chatdDb.h"
 #include <megaapi_impl.h>
 #include <autoHandle.h>
 #include <asyncTools.h>

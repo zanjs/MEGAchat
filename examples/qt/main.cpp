@@ -11,11 +11,11 @@
 #include "chatWindow.h"
 #include <chatClient.h>
 #include <sdkApi.h>
-#include <chatd.h>
+#include <chatd/chatd.h>
 #include <mega/megaclient.h>
 #include <karereCommon.h>
 #include <fstream>
-#include <net/libwebsocketsIO.h>
+#include <net/wsIO.h>
 
 using namespace std;
 using namespace promise;

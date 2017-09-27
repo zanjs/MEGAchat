@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(services)
-include(../utils.cmake)
+include(../../cmake/utils.cmake)
 
 set(optServicesUseLibuv 1 CACHE BOOL "Use libuv instead of libevent")
 set(optServicesBuildShared 0 CACHE BOOL "Build libservices as a shared lib, for use of the async services by several shared objects")
@@ -22,7 +22,7 @@ if (optServicesUseLibuv)
     set(KR_USE_LIBUV 1)
     set(KR_USE_LIBWEBSOCKETS 1)
     list(APPEND SRCS
-        ../waiter/libuvWaiter.cpp
+        waiter/libuvWaiter.cpp
     )
 else()
     find_package(LibEvent REQUIRED)
@@ -30,7 +30,7 @@ else()
     set(SERVICES_INCLUDE_DIRS ${LIBEVENT_INCLUDE_DIRS} ${LIBWS_DIR}/src ${CMAKE_CURRENT_BINARY_DIR}/libws)
     set(SERVICES_DEP_LIBS {LIBEVENT_LIBRARIES})
     list(APPEND SRCS
-        ../waiter/libeventWaiter.cpp
+        waiter/libeventWaiter.cpp
     )
     set(LIBWS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/libws CACHE PATH "libws source dir, where its CMakeLists.txt is located")
     set(LIBWS_EXTERNAL_LOOP 1 CACHE BOOL "Use libws with external libevent loop")

@@ -4,7 +4,7 @@
 #include <ui_settings.h>
 #include "qmessagebox.h"
 #include <string>
-#include <videoRenderer_Qt.h>
+#include <renderer/videoRenderer_Qt.h>
 #include "rtcModule/webrtc.h"
 #include <iostream>
 //#include <rapidjson/document.h>
@@ -14,7 +14,7 @@
 #include <QPainter>
 #include <QImage>
 #include <math.h>
-#include "chatdICrypto.h"
+#include <chatd/chatdICrypto.h>
 
 #undef emit
 #define THROW_IF_FALSE(statement) \
