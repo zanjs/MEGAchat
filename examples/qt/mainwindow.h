@@ -154,28 +154,29 @@ public:
 class CListChatItem: public CListItem, public virtual karere::IApp::IChatListItem
 {
     Q_OBJECT
+protected:
+    karere::ChatRoom& mRoom;
 public:
     promise::Promise<ChatWindow*> showChatWindow()
     {
         ChatWindow* window;
-        auto& thisRoom = room();
-        if (!thisRoom.appChatHandler())
+        if (!mRoom.appChatHandler())
         {
-            window = new ChatWindow(this, thisRoom);
-            thisRoom.setAppChatHandler(window);
+            window = new ChatWindow(this, mRoom);
+            mRoom.setAppChatHandler(window);
         }
         else
         {
-            window = static_cast<ChatWindow*>(thisRoom.appChatHandler()->userp);
+            window = static_cast<ChatWindow*>(mRoom.appChatHandler()->userp);
         }
         window->show();
         return window;
     }
-    CListChatItem(QWidget* parent): CListItem(parent)
+    CListChatItem(QWidget* parent, karere::ChatRoom& room): CListItem(parent), mRoom(room)
     {
         //getLastTextMsg needs to call a virtual method, which is not available
         //during construction
-        karere::marshallCall([this] { getLastTextMsg(); }, NULL);
+        mRoom.parent.client.marshallCall([this] { getLastTextMsg(); });
     }
     void getLastTextMsg()
     {
@@ -224,7 +225,7 @@ protected slots:
     void truncateChat();
 };
 
-class CListContactItem: public CListItem, public virtual karere::IApp::IContactListItem
+class CListContactItem: public CListItem, public virtual karere::IApp::IContactListItem, public karere::DeleteTrackable
 {
     Q_OBJECT
 protected:
@@ -238,7 +239,7 @@ public:
         {
             showAsHidden();
         }
-        karere::setTimeout([this]() { updateToolTip(); }, 100, NULL);
+        updateToolTip();
     }
     void updateToolTip() //WARNING: Must be called after app init, as the xmpp jid is not initialized during creation
     {
@@ -428,7 +429,7 @@ class CListGroupChatItem: public CListChatItem, public virtual karere::IApp::IGr
     Q_OBJECT
 public:
     CListGroupChatItem(QWidget* parent, karere::GroupChatRoom& room)
-        :CListChatItem(parent), mRoom(room)
+        :CListChatItem(parent, room)
     {
         ui.mAvatar->setText("G");
         updateToolTip();
@@ -441,14 +442,14 @@ public:
         text.append(QString::fromStdString(karere::Id(mRoom.chatid()).toString()))
             .append(tr("\nOwn privilege: ")).append(QString(chatd::privToString(mRoom.ownPriv())))
             .append(tr("\nOther participants:"));
-        if (mRoom.peers().empty())
+        if (room().peers().empty())
         {
             text.append(" (none)");
         }
         else
         {
             text.append("\n");
-            for (const auto& item: mRoom.peers())
+            for (const auto& item: room().peers())
             {
                 auto& peer = *item.second;
                 const std::string* email = mRoom.parent.client.contactList->getUserEmail(item.first);
@@ -485,7 +486,6 @@ public:
         ui.mName->setText(text);
     }
 protected:
-    karere::GroupChatRoom& mRoom;
     void contextMenuEvent(QContextMenuEvent* event)
     {
         QMenu menu(this);
@@ -499,34 +499,34 @@ protected:
         menu.exec(event->globalPos());
     }
     virtual void mouseDoubleClickEvent(QMouseEvent* event) { showChatWindow(); }
-    virtual karere::ChatRoom& room() const { return mRoom; }
+    karere::GroupChatRoom& room() const { return static_cast<karere::GroupChatRoom&>(mRoom); }
 protected slots:
-    void leaveGroupChat() { karere::marshallCall([this]() { mRoom.leave(); }, NULL); } //deletes this
+    void leaveGroupChat() { mRoom.parent.client.marshallCall([this]() { room().leave(); }); } //deletes this
     void setTitle();
 };
 
 class CListPeerChatItem: public CListChatItem, public virtual karere::IApp::IPeerChatListItem
 {
 protected:
-    karere::PeerChatRoom& mRoom;
     CListContactItem* mContactItem;
 public:
-    CListPeerChatItem(QWidget* parent, karere::PeerChatRoom& room)
-        : CListChatItem(parent), mRoom(room),
-          mContactItem(dynamic_cast<CListContactItem*>(room.contact().appItem()))
+    CListPeerChatItem(QWidget* parent, karere::PeerChatRoom& aRoom)
+        : CListChatItem(parent, aRoom),
+          mContactItem(dynamic_cast<CListContactItem*>(room().contact().appItem()))
     {
-        if(mRoom.contact().visibility() == ::mega::MegaUser::VISIBILITY_HIDDEN)
+        if(room().contact().visibility() == ::mega::MegaUser::VISIBILITY_HIDDEN)
             showAsHidden();
         ui.mAvatar->setText("1");
         updateToolTip();
     }
+    karere::PeerChatRoom& room() { return static_cast<karere::PeerChatRoom&>(mRoom); }
     void updateToolTip() //WARNING: Must be called after app init, as the xmpp jid is not initialized during creation
     {
         QString text(tr("1on1 Chat room: "));
         text.append(QString::fromStdString(karere::Id(mRoom.chatid()).toString()));
         text.append(tr("\nEmail: "));
-        text.append(QString::fromStdString(mRoom.contact().email()));
-        text.append(tr("\nUser handle: ")).append(QString::fromStdString(karere::Id(mRoom.contact().userId()).toString()));
+        text.append(QString::fromStdString(room().contact().email()));
+        text.append(tr("\nUser handle: ")).append(QString::fromStdString(karere::Id(room().contact().userId()).toString()));
         text.append(tr("\nLast message:\n")).append(QString::fromStdString(mLastTextMsg));
         setToolTip(text);
     }

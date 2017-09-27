@@ -237,7 +237,10 @@ class TlvWriter;
 extern const std::string SVCRYPTO_PAIRWISE_KEY;
 void deriveSharedKey(const StaticBuffer& sharedSecret, SendKey& output, const std::string& padString=SVCRYPTO_PAIRWISE_KEY);
 
-class ProtocolHandler: public chatd::ICrypto, public karere::DeleteTrackable
+class ProtocolHandler:
+        public chatd::ICrypto,
+        public karere::DeleteTrackable,
+        public karere::AppCtxRef
 {
 protected:
     karere::Id mOwnHandle;
@@ -271,7 +274,7 @@ public:
     ProtocolHandler(karere::Id ownHandle, const StaticBuffer& PrivCu25519,
         const StaticBuffer& PrivEd25519,
         const StaticBuffer& privRsa, karere::UserAttrCache& userAttrCache,
-        SqliteDb& db, karere::Id aChatId, void *ctx);
+        SqliteDb& db, karere::Id aChatId, karere::AppCtx& ctx);
 protected:
     void loadKeysFromDb();
     promise::Promise<std::shared_ptr<SendKey>> getKey(UserKeyId ukid, bool legacy=false);

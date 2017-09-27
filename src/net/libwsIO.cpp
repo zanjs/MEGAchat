@@ -6,11 +6,10 @@
 #include "waiter/libeventWaiter.h"
 
 using namespace std;
-
-LibwsIO::LibwsIO(::mega::Mutex *mutex, void *ctx) : WebsocketsIO(mutex, ctx)
+namespace ws
 {
-    initialized = false;
-}
+LibwsIO::LibwsIO(::mega::Mutex *mutex, void *ctx) : IO(mutex, ctx)
+{}
 
 LibwsIO::~LibwsIO()
 {
@@ -21,51 +20,48 @@ LibwsIO::~LibwsIO()
 
 void LibwsIO::addevents(::mega::Waiter* waiter, int)
 {
-    if (!initialized)
+    assert(!mIsInitialized);
+    ::mega::LibeventWaiter *libeventWaiter = dynamic_cast<::mega::LibeventWaiter *>(waiter);
+    ws_global_init(&wscontext, libeventWaiter ? libeventWaiter->eventloop : services_get_event_loop(), NULL,
+    [](struct bufferevent* bev, void* userp)
     {
-        ::mega::LibeventWaiter *libeventWaiter = dynamic_cast<::mega::LibeventWaiter *>(waiter);
-        ws_global_init(&wscontext, libeventWaiter ? libeventWaiter->eventloop : services_get_event_loop(), NULL,
-        [](struct bufferevent* bev, void* userp)
+        karere::marshallCall([bev, userp]()
         {
-            karere::marshallCall([bev, userp]()
-            {
-                ws_read_callback(bev, userp);
-            }, NULL);
-        },
-        [](struct bufferevent* bev, short events, void* userp)
+            ws_read_callback(bev, userp);
+        }, NULL);
+    },
+    [](struct bufferevent* bev, short events, void* userp)
+    {
+        karere::marshallCall([bev, events, userp]()
         {
-            karere::marshallCall([bev, events, userp]()
-            {
-                ws_event_callback(bev, events, userp);
-            }, NULL);
-        },
-        [](int fd, short events, void* userp)
+            ws_event_callback(bev, events, userp);
+        }, NULL);
+    },
+    [](int fd, short events, void* userp)
+    {
+        karere::marshallCall([events, userp]()
         {
-            karere::marshallCall([events, userp]()
-            {
-                ws_handle_marshall_timer_cb(0, events, userp);
-            }, NULL);
-        });
-        //ws_set_log_level(LIBWS_TRACE);
-        initialized = true;
-    }
+            ws_handle_marshall_timer_cb(0, events, userp);
+        }, NULL);
+    });
+    //ws_set_log_level(LIBWS_TRACE);
+    mIsInitialized = true;
 }
 
-WebsocketsClientImpl *LibwsIO::wsConnect(const char *ip, const char *host, int port, const char *path, bool ssl, WebsocketsClient *client)
+Socket *LibwsIO::wsConnect(Client& client, const char *ip, const char *host, int port, const char *path, bool ssl, EventHandler *handler)
 {
-    if (!initialized)   // check required for compatibility with Qt app, which is not initialized by default
+    if (!mIsInitialized)   // check required for compatibility with Qt app, which is not initialized by default
     {
         addevents(NULL, 0);
     }
 
     int result;
-    LibwsClient *libwsClient = new LibwsClient(mutex, client, appCtx);
+    std::unique_ptr<Socket> socket(new Socket(client, handler));
     
-    result = ws_init(&libwsClient->mWebSocket, &wscontext);
+    result = ws_init(&socket->mWebSocket, &wscontext);
     if (result)
     {        
         WEBSOCKETS_LOG_DEBUG("Failed to initialize libws at wsConnect()");
-        delete libwsClient;
         return NULL;
     }
     
@@ -104,25 +100,23 @@ WebsocketsClientImpl *LibwsIO::wsConnect(const char *ip, const char *host, int p
     if (result)
     {
         WEBSOCKETS_LOG_DEBUG("Failed to connect with libws");
-        delete libwsClient;
         return NULL;
     }
-    return libwsClient;
+    return socket.release();
 }
 
-LibwsClient::LibwsClient(::mega::Mutex *mutex, WebsocketsClient *client, void *ctx) : WebsocketsClientImpl(mutex, client)
+LibwsSocket::LibwsSocket(Client& client, EventHandler *handler)
+: Socket(client, handler)
+{}
+
+LibwsSocket::~LibwsSocket()
 {
-    this->appCtx = ctx;
+    disconnect(true);
 }
 
-LibwsClient::~LibwsClient()
+void LibwsSocket::connectCb(ws_t ws, void* arg)
 {
-    wsDisconnect(true);
-}
-
-void LibwsClient::websockConnectCb(ws_t ws, void* arg)
-{
-    LibwsClient* self = static_cast<LibwsClient*>(arg);
+    LibwsSocket* self = static_cast<LibwsSocket*>(arg);
     assert (ws == self->mWebSocket);
 
     auto wptr = self->getDelTracker();
@@ -132,12 +126,12 @@ void LibwsClient::websockConnectCb(ws_t ws, void* arg)
             return;
 
         self->wsConnectCb();
-    }, self->appCtx);
+    }, self->mAppCtx);
 }
 
-void LibwsClient::websockCloseCb(ws_t ws, int errcode, int errtype, const char *preason, size_t reason_len, void *arg)
+void LibwsClient::closeCb(ws_t ws, int errcode, int errtype, const char *preason, size_t reason_len, void *arg)
 {
-    LibwsClient* self = static_cast<LibwsClient*>(arg);
+    LibwsSocket* self = static_cast<LibwsSocket*>(arg);
     assert (ws == self->mWebSocket);
 
     std::string reason;
@@ -156,31 +150,21 @@ void LibwsClient::websockCloseCb(ws_t ws, int errcode, int errtype, const char *
         }
         
         self->wsCloseCb(errcode, errtype, reason.data(), reason.size());
-    }, self->appCtx);
+    }, self->mAppCtx);
 }
 
-void LibwsClient::websockMsgCb(ws_t ws, char *msg, uint64_t len, int binary, void *arg)
+void LibwsSocket::websockMsgCb(ws_t ws, char *msg, uint64_t len, int binary, void *arg)
 {
-    LibwsClient* self = static_cast<LibwsClient*>(arg);
+    LibwsSocket* self = static_cast<LibwsSocket*>(arg);
     assert (ws == self->mWebSocket);
 
     string data;
     data.assign(msg, (size_t)len);
-    
-    auto wptr = self->getDelTracker();
-    karere::marshallCall([self, wptr, data]()
-    {
-        if (wptr.deleted())
-            return;
-        
-        self->wsHandleMsgCb((char *)data.data(), data.size());
-    }, self->appCtx);
+    self->wsHandleMsgCb(data);
 }
                          
-bool LibwsClient::wsSendMessage(char *msg, size_t len)
-{
-    assert (mWebSocket);
-    
+bool LibwsClient::sendMessage(char *msg, size_t len)
+{    
     if (!mWebSocket)
     {
         return false;
@@ -189,7 +173,7 @@ bool LibwsClient::wsSendMessage(char *msg, size_t len)
     return !ws_send_msg_ex(mWebSocket, msg, len, 1);
 }
 
-void LibwsClient::wsDisconnect(bool immediate)
+void LibwsClient::disconnect(bool immediate)
 {
     if (!mWebSocket)
     {
@@ -208,7 +192,7 @@ void LibwsClient::wsDisconnect(bool immediate)
     }
 }
 
-bool LibwsClient::wsIsConnected()
+bool LibwsSocket::isConnected()
 {
     return mWebSocket;
 }

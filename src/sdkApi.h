@@ -7,7 +7,7 @@
 #endif
 #include <megaapi.h>
 #include "base/promise.h"
-#include "base/gcmpp.h"
+#include "base/appCtx.h"
 #include <logger.h>
 #include <string.h>
 #include "karereCommon.h" //for KR_LOG_DEBUG
@@ -15,7 +15,8 @@
 typedef std::shared_ptr<::mega::MegaRequest> ReqResult;
 typedef promise::Promise<ReqResult> ApiPromise;
 enum {ERRTYPE_MEGASDK = 0x3e9aab10};
-
+namespace karere
+{
 class SdkString
 {
 protected:
@@ -37,16 +38,15 @@ public:
 
 class MyListener: public mega::MegaRequestListener
 {
-    void *appCtx;
-    
+    karere::AppCtx& appCtx;
 public:
-    MyListener(void *ctx) : appCtx(ctx) { }
+    MyListener(AppCtx& ctx) : appCtx(ctx) { }
     ApiPromise mPromise;
     virtual void onRequestFinish(mega::MegaApi* api, mega::MegaRequest *request, mega::MegaError* e)
     {
         std::shared_ptr<::mega::MegaRequest> req(request->copy());
         int errCode = e->getErrorCode();
-        karere::marshallCall([this, req, errCode]()
+        appCtx.marshallCall([this, req, errCode]()
         {
             if (mPromise.done())
                 return; //a timeout timer may resolve it before the actual callback
@@ -62,22 +62,22 @@ public:
                 mPromise.resolve(req);
             }
             delete this;
-        }, appCtx);
+        });
     }
 };
 
 class MyListenerNoResult: public ::mega::MegaRequestListener
 {
-    void *appCtx;
+    AppCtx& appCtx;
 
 public:
-    MyListenerNoResult(void *ctx) : appCtx(ctx) { }
+    MyListenerNoResult(AppCtx& ctx) : appCtx(ctx) { }
 
     promise::Promise<void> mPromise;
     virtual void onRequestFinish(mega::MegaApi* api, mega::MegaRequest *request, mega::MegaError* e)
     {
         int errCode = e->getErrorCode();
-        karere::marshallCall([this, errCode]()
+        appCtx.marshallCall([this, errCode]()
         {
             if (mPromise.done())
                 return; //a timeout timer may resolve it before the actual callback
@@ -93,7 +93,7 @@ public:
                 mPromise.resolve();
             }
             delete this;
-        }, appCtx);
+        });
     }
 };
 
@@ -130,9 +130,9 @@ class MyMegaApi
 public:
     ::mega::MegaApi& sdk;
     std::unique_ptr<MyMegaLogger> mLogger;
-    void *appCtx;
+    karere::AppCtx& appCtx;
     
-    MyMegaApi(::mega::MegaApi& aSdk, void *ctx)
+    MyMegaApi(::mega::MegaApi& aSdk, karere::AppCtx& ctx)
     :sdk(aSdk), mLogger(new MyMegaLogger), appCtx(ctx)
     {
         sdk.addLoggerObject(mLogger.get());
@@ -159,5 +159,6 @@ public:
         KR_LOG_DEBUG("Deleted SDK logger");
     }
 };
+}
 
 #endif // SDKAPI_H

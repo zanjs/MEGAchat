@@ -28,10 +28,9 @@ using namespace karere;
 namespace presenced
 {
 
-    Client::Client(MyMegaApi *api, karere::Client *client, Listener& listener, uint8_t caps)
-: mListener(&listener), karereClient(client), mApi(api), mCapabilities(caps)
-{
-}
+Client::Client(MyMegaApi *api, karere::Client& client, Listener& listener, uint8_t caps)
+: wsClient(client), mListener(&listener), karereClient(client), mApi(api), mCapabilities(caps)
+{}
 
 promise::Promise<void>
 Client::connect(const std::string& url, Id myHandle, IdRefMap&& currentPeers,
@@ -72,13 +71,8 @@ void Client::notifyLoggedIn()
     setConnState(kLoggedIn);
     mLoginPromise.resolve();
 }
-
-void Client::wsCloseCb(int errcode, int errtype, const char *preason, size_t reason_len)
-{
-    onSocketClose(errcode, errtype, preason);
-}
     
-void Client::onSocketClose(int errcode, int errtype, const std::string& reason)
+void Client::wsCloseCb(int errcode, int errtype, const std::string& reason)
 {
     PRESENCED_LOG_WARNING("Socket close, reason: %s", reason.c_str());
     
@@ -212,7 +206,7 @@ Client::reconnect(const std::string& url)
                 setConnState(kConnecting);
                 string ip = result->getText();
                 PRESENCED_LOG_DEBUG("Connecting to presenced using the IP: %s", ip.c_str());
-                bool rt = wsConnect(karereClient->websocketIO, ip.c_str(),
+                bool rt = wsConnect(karereClient.websocketIO, ip.c_str(),
                           mUrl.host.c_str(),
                           mUrl.port,
                           mUrl.path.c_str(),
@@ -239,7 +233,7 @@ Client::reconnect(const std::string& url)
                 mHeartbeatEnabled = true;
                 return login();
             });
-        }, karereClient->appCtx, nullptr, 0, 0, KARERE_RECONNECT_DELAY_MAX, KARERE_RECONNECT_DELAY_INITIAL);
+        }, *this, nullptr, 0, 0, KARERE_RECONNECT_DELAY_MAX, KARERE_RECONNECT_DELAY_INITIAL);
     }
     KR_EXCEPTION_TO_PROMISE(kPromiseErrtype_presenced);
 }
@@ -481,11 +475,11 @@ Client::~Client()
 #define READ_8(varname, offset)\
     assert(offset==pos-base); uint8_t varname(buf.read<uint8_t>(pos)); pos+=1
 
-void Client::wsHandleMsgCb(char *data, size_t len)
+void Client::wsHandleMsgCb(string&& data)
 {
     mTsLastRecv = time(NULL);
     mTsLastPingSent = 0;
-    handleMessage(StaticBuffer(data, len));
+    handleMessage(StaticBuffer(data.data(), data.size()));
 }
 
 // inbound command processing

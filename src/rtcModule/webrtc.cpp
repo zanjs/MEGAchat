@@ -587,7 +587,7 @@ void Call::getLocalStream(AvFlags av, std::string& errors)
     setState(Call::kStateHasLocalStream);
     IVideoRenderer* renderer = NULL;
     FIRE_EVENT(SESSION, onLocalStreamObtained, renderer);
-    mLocalPlayer.reset(new artc::StreamPlayer(renderer));
+    mLocalPlayer.reset(new artc::StreamPlayer(renderer, mManager.mClient.appCtx));
     if (mLocalStream && mLocalStream->video())
     {
         mLocalPlayer->attachVideo(mLocalStream->video());
@@ -1237,7 +1237,7 @@ call the caller is requesting - audio or video.
 This is not available when joining an existing call.
 */
 Session::Session(Call& call, RtMessage& packet)
-:ISession(call, packet.userid, packet.clientid), mManager(call.mManager)
+:ISession(call, packet.userid, packet.clientid)
 {
     // Packet can be RTCMD_JOIN or RTCMD_SESSION
     call.mManager.random(mOwnSdpKey);
@@ -1360,7 +1360,7 @@ void Session::onAddStream(artc::tspMediaStream stream)
     IVideoRenderer* renderer = NULL;
     FIRE_EVENT(SESSION, onRemoteStreamAdded, renderer);
     assert(renderer);
-    mRemotePlayer.reset(new artc::StreamPlayer(renderer, mManager.mClient.appCtx));
+    mRemotePlayer.reset(new artc::StreamPlayer(renderer, mCall.manager().client().appCtx));
     mRemotePlayer->setOnMediaStart([this]()
     {
         FIRE_EVENT(SESS, onVideoRecv);
@@ -1645,7 +1645,7 @@ void Session::asyncDestroy(TermCode code, const std::string& msg)
         if (wptr.deleted())
             return;
         destroy(code, msg);
-    }, mManager.mClient.appCtx);
+    }, mCall.manager().client().appCtx);
 }
 
 Promise<void> Session::terminateAndDestroy(TermCode code, const std::string& msg)
@@ -1679,7 +1679,7 @@ Promise<void> Session::terminateAndDestroy(TermCode code, const std::string& msg
             SUB_LOG_WARNING("Terminate ack didn't arrive withing timeout, destroying session anyway");
             mTerminatePromise.resolve();
         }
-    }, 1000, mManager.mClient.appCtx);
+    }, 1000, mCall.manager().client().appCtx);
     auto pms = mTerminatePromise;
     return pms
     .then([wptr, this, code, msg]()

@@ -1,31 +1,25 @@
-#include "net/websocketsIO.h"
-
-WebsocketsIO::WebsocketsIO(::mega::Mutex *mutex, void *ctx)
+#include "websocketsIO.h"
+namespace ws
 {
-    this->mutex = mutex;
-    this->appCtx = ctx;
-}
+IO::IO(::mega::Mutex *mutex, karere::AppCtx& ctx)
+    : AppCtxRef(ctx), mMutex(mutex)
+{}
 
-WebsocketsIO::~WebsocketsIO()
-{
-    
-}
+IO::~IO()
+{}
 
-WebsocketsClientImpl::WebsocketsClientImpl(::mega::Mutex *mutex, WebsocketsClient *client)
-{
-    this->mutex = mutex;
-    this->client = client;
-}
+Socket::Socket(ws::wsClient& client, EventHandler *handler)
+ : mClient(client), mHandler(handler)
+{}
 
 class ScopedLock
 {
     ::mega::Mutex *m;
-    
 public:
     ScopedLock(::mega::Mutex *mutex) : m(mutex)
     {
         if (m)
-        {    
+        {
             m->lock();
         }
     }
@@ -38,59 +32,104 @@ public:
     }
 };
 
-void WebsocketsClientImpl::wsConnectCb()
+void Socket::wsConnectCb()
 {
-    ScopedLock(this->mutex);
+//    ScopedLock lock(mMutex);
     WEBSOCKETS_LOG_DEBUG("Connection established");
-    client->wsConnectCb();
+    if (std::this_thread::get_id() == mClient.mThreadId)
+    {
+        mHandler->wsConnectCb();
+    }
+    else
+    {
+        auto wptr = weakHandle();
+        mClient.marshallCall([wptr, this]
+        {
+            if (wptr.deleted())
+                return;
+            mHandler->wsConnectCb();
+        });
+    }
 }
 
-void WebsocketsClientImpl::wsCloseCb(int errcode, int errtype, const char *preason, size_t reason_len)
+void Socket::wsCloseCb(int errcode, int errtype, const char *preason, size_t reason_len)
 {
-    ScopedLock(this->mutex);
+//    ScopedLock lock(mMutex);
     WEBSOCKETS_LOG_DEBUG("Connection closed");
-    client->wsCloseCb(errcode, errtype, preason, reason_len);
+    if (std::this_thread::get_id() == mClient.mThreadId)
+    {
+        std::string reason;
+        if (preason)
+        {
+            reason.assign(preason, reason_len);
+        }
+        mHandler->wsCloseCb(errcode, errtype, reason);
+    }
+    else
+    {
+        std::string reason;
+        if (preason)
+        {
+            reason.assign(preason, reason_len);
+        }
+        auto wptr = weakHandle();
+        mClient.marshallCall([wptr, this, errcode, errtype, reason]
+        {
+            if (wptr.deleted())
+                return;
+            mHandler->wsCloseCb(errcode, errtype, reason);
+        });
+    }
 }
 
-void WebsocketsClientImpl::wsHandleMsgCb(char *data, size_t len)
+void Socket::wsHandleMsgCb(std::string&& data)
 {
-    ScopedLock(this->mutex);
-    WEBSOCKETS_LOG_DEBUG("Received %d bytes", len);
-    client->wsHandleMsgCb(data, len);
+//    ScopedLock lock(mMutex);
+    WEBSOCKETS_LOG_DEBUG("Received %zu bytes", data.size());
+    if (std::this_thread::get_id() == mClient.mThreadId)
+    {
+        mHandler->wsHandleMsgCb(std::forward<std::string>(data));
+    }
+    else
+    {
+        auto wptr = weakHandle();
+        std::string marshalledData(std::forward<std::string>(data));
+        mClient.marshallCall([wptr, this, marshalledData]() mutable
+        {
+            if (wptr.deleted())
+                return;
+            mHandler->wsHandleMsgCb(std::forward<std::string>(marshalledData));
+        });
+    }
 }
 
-WebsocketsClient::WebsocketsClient()
-{
-    ctx = NULL;
-    thread_id = 0;
-}
+wsClient::wsClient(karere::AppCtx& ctx): AppCtxRef(ctx), mSocket(NULL){}
 
-bool WebsocketsClient::wsConnect(WebsocketsIO *websocketIO, const char *ip, const char *host, int port, const char *path, bool ssl)
+bool wsClient::wsConnect(IO *io, const char *ip, const char *host, int port, const char *path, bool ssl)
 {
-    thread_id = pthread_self();
+    mThreadId = std::this_thread::get_id();
     
     WEBSOCKETS_LOG_DEBUG("Connecting to %s (%s)  port %d  path: %s   ssl: %d", host, ip, port, path, ssl);
-    ctx = websocketIO->wsConnect(ip, host, port, path, ssl, this);
-    if (!ctx)
+    mSocket = io->connect(*this, ip, host, port, path, ssl, this);
+    if (!mSocket)
     {
         WEBSOCKETS_LOG_WARNING("Immediate error in wsConnect");
     }
-    return ctx != NULL;
+    return mSocket != NULL;
 }
 
-bool WebsocketsClient::wsSendMessage(char *msg, size_t len)
+bool wsClient::wsSendMessage(char *msg, size_t len)
 {
-    assert (ctx);
-    if (!ctx)
+    if (!mSocket)
     {
         WEBSOCKETS_LOG_ERROR("Trying to send a message without a previous initialization");
         return false;
     }
 
-    assert (thread_id == pthread_self());
+    assert (std::this_thread::get_id() == mThreadId);
     
     WEBSOCKETS_LOG_DEBUG("Sending %d bytes", len);
-    bool result = ctx->wsSendMessage(msg, len);
+    bool result = mSocket->sendMessage(msg, len);
     if (!result)
     {
         WEBSOCKETS_LOG_WARNING("Immediate error in wsSendMessage");
@@ -98,27 +137,28 @@ bool WebsocketsClient::wsSendMessage(char *msg, size_t len)
     return result;
 }
 
-void WebsocketsClient::wsDisconnect(bool immediate)
+void wsClient::wsDisconnect(bool immediate)
 {
     WEBSOCKETS_LOG_DEBUG("Disconnecting. Immediate: %d", immediate);
     
-    if (!ctx)
+    if (!mSocket)
     {
         return;
     }
     
-    assert (thread_id == pthread_self());
-    ctx->wsDisconnect(immediate);
+    assert (std::this_thread::get_id() == mThreadId);
+    mSocket->disconnect(immediate);
 }
 
-bool WebsocketsClient::wsIsConnected()
+bool wsClient::wsIsConnected()
 {
-    if (!ctx)
+    if (!mSocket)
     {
         return false;
     }
     
-    assert (thread_id == pthread_self());
-    return ctx->wsIsConnected();
+    assert (std::this_thread::get_id() == mThreadId);
+    return mSocket->isConnected();
 }
 
+}

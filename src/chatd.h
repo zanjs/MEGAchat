@@ -9,7 +9,7 @@
 #include <list>
 #include <deque>
 #include <base/promise.h>
-#include <base/timers.hpp>
+#include <base/appCtx.h>
 #include <base/trackDelete.h>
 #include "chatdMsg.h"
 #include "url.h"
@@ -19,7 +19,7 @@ namespace karere {
     class Client;
 }
 
-class MyMegaApi;
+
 
 #define CHATD_LOG_DEBUG(fmtString,...) KARERE_LOG_DEBUG(krLogChannel_chatd, fmtString, ##__VA_ARGS__)
 #define CHATD_LOG_INFO(fmtString,...) KARERE_LOG_INFO(krLogChannel_chatd, fmtString, ##__VA_ARGS__)
@@ -310,7 +310,7 @@ struct EndpointId
 class Client;
 
 // need DeleteTrackable for graceful disconnect timeout
-class Connection: public karere::DeleteTrackable, public WebsocketsClient
+class Connection: public karere::DeleteTrackable, public ws::wsClient
 {
 public:
     enum State { kStateNew, kStateDisconnected, kStateResolving, kStateConnecting, kStateConnected, kStateLoggedIn };
@@ -320,7 +320,7 @@ protected:
     std::set<karere::Id> mChatIds;
     State mState = kStateNew;
     karere::Url mUrl;
-    megaHandle mInactivityTimer = 0;
+    karere::TimerHandle mInactivityTimer;
     int mInactivityBeats = 0;
     bool mTerminating = false;
     promise::Promise<void> mConnectPromise;
@@ -328,7 +328,7 @@ protected:
     promise::Promise<void> mLoginPromise;
     uint64_t mIdentity; // seed for CLIENTID
     uint32_t mClientId = 0;
-    Connection(Client& client, int shardNo);
+    Connection(::chatd::Client& client, int shardNo);
     State state() { return mState; }
     bool isConnected() const
     {
@@ -340,8 +340,8 @@ protected:
     }
     
     virtual void wsConnectCb();
-    virtual void wsCloseCb(int errcode, int errtype, const char *preason, size_t reason_len);
-    virtual void wsHandleMsgCb(char *data, size_t len);
+    virtual void wsCloseCb(int errcode, int errtype, const std::string& reason);
+    virtual void wsHandleMsgCb(std::string&& data);
 
     void onSocketClose(int ercode, int errtype, const std::string& reason);
     promise::Promise<void> reconnect(const std::string& url=std::string());
@@ -524,10 +524,8 @@ public:
         ManualSendItem()
             :msg(nullptr), rowid(0), opcode(0), reason(kManualSendInvalidReason){}
     };
-
-    Client& mClient;
-
 protected:
+    Client& mClient;
     Connection& mConnection;
     karere::Id mChatId;
     Idx mForwardStart;
@@ -1051,7 +1049,7 @@ public:
 //===
 };
 
-class Client
+class Client: public karere::AppCtxRef
 {
 protected:
 /// maps the chatd shard number to its corresponding Shard connection
@@ -1075,12 +1073,11 @@ public:
     enum: uint32_t { kOptManualResendWhenUserJoins = 1 };
     unsigned inactivityCheckIntervalSec = 20;
     uint32_t options = 0;
-    MyMegaApi *mApi;
-    karere::Client *karereClient;
+    karere::Client& karereClient;
     uint8_t mKeepaliveType = OP_KEEPALIVE;
     IRtcHandler* mRtcHandler = nullptr;
     karere::Id userId() const { return mUserId; }
-    Client(karere::Client *client, karere::Id userId);
+    Client(karere::Client& client, karere::Id userId);
     ~Client(){}
     std::shared_ptr<Chat> chatFromId(karere::Id chatid) const
     {

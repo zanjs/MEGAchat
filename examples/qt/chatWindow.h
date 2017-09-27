@@ -209,7 +209,7 @@ protected:
  *  and after which are all unsent messages, in order
  */
     int mHistAddPos = 0;
-    megaHandle mUpdateSeenTimer = 0;
+    karere::TimerHandle mUpdateSeenTimer;
     friend class CallGui;
     friend class CallAnswerGui;
     friend class WaitMsg;
@@ -403,7 +403,7 @@ protected:
     void updateSeen();
     virtual void showEvent(QShowEvent* event)
     {
-        mUpdateSeenTimer = karere::setTimeout([this]() { updateSeen(); }, 2000, NULL);
+        mUpdateSeenTimer = client.setTimeout([this]() { updateSeen(); }, 2000);
     }
     virtual void dragEnterEvent(QDragEnterEvent* event)
     {

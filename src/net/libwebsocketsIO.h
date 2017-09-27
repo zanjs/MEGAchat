@@ -5,35 +5,35 @@
 #include <openssl/ssl.h>
 #include <iostream>
 
-#include "net/websocketsIO.h"
-
+#include "websocketsIO.h"
+namespace libwebsockets
+{
 // Websockets network layer implementation based on libwebsocket
-class LibwebsocketsIO : public WebsocketsIO
+class IO : public ws::IO
 {
 public:
     struct lws_context *wscontext;
-    LibwebsocketsIO(::mega::Mutex *mutex, void *ctx);
-    virtual ~LibwebsocketsIO();
-    
+    IO(::mega::Mutex *mutex, karere::AppCtx& ctx);
+    virtual ~IO();
+    virtual void registerWithEventLoop(void* eventloop);
+// mega::EventTrigger interface
     virtual void addevents(::mega::Waiter*, int);
-    
+//==
 protected:
-    bool initialized;
-    virtual WebsocketsClientImpl *wsConnect(const char *ip, const char *host,
-                                           int port, const char *path, bool ssl,
-                                           WebsocketsClient *client);
+    virtual ws::Socket *connect(ws::wsClient& client, const char *ip, const char *host,
+        int port, const char *path, bool ssl, ws::EventHandler *handler);
 };
 
-class LibwebsocketsClient : public WebsocketsClientImpl
+class Socket : public ws::Socket
 {
 public:
-    LibwebsocketsClient(::mega::Mutex *mutex, WebsocketsClient *client);
-    virtual ~LibwebsocketsClient();
+    using ws::Socket::Socket;
+    virtual ~Socket();
     
 protected:
     std::string recbuffer;
     std::string sendbuffer;
-    bool disconnecting;
+    bool disconnecting = false;
 
     void appendMessageFragment(char *data, size_t len, size_t remaining);
     bool hasFragments();
@@ -44,14 +44,15 @@ protected:
     size_t getOutputBufferLength();
     void resetOutputBuffer();
     
-    virtual bool wsSendMessage(char *msg, size_t len);
-    virtual void wsDisconnect(bool immediate);
-    virtual bool wsIsConnected();
+    virtual bool sendMessage(char *msg, size_t len);
+    virtual void disconnect(bool immediate);
+    virtual bool isConnected();
     
 public:
-    struct lws *wsi;
+    struct lws *wsi = nullptr;
     static int wsCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *data, size_t len);
 };
+}
 
 
 #endif /* libwebsocketsIO_h */

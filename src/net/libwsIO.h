@@ -5,9 +5,10 @@
 #include "net/websocketsIO.h"
 #include "trackDelete.h"
 #include <mega/waiter.h>
-
+namespace ws
+{
 // Websockets network layer implementation based on libws
-class LibwsIO : public WebsocketsIO
+class LibwsIO : public IO
 {
 public:
     LibwsIO(::mega::Mutex *mutex = NULL, void *ctx = NULL);
@@ -16,29 +17,29 @@ public:
     virtual void addevents(::mega::Waiter*, int);
 
 protected:
-    bool initialized;
-    ws_base_s wscontext;
-    virtual WebsocketsClientImpl *wsConnect(const char *ip, const char *host,
+    bool mIsInitialized = false;
+    ws_base_s mWsContext;
+    virtual Socket *connect(Client& client, const char *ip, const char *host,
                                            int port, const char *path, bool ssl,
-                                           WebsocketsClient *client);
+                                           EventHandler *handler);
 };
 
-class LibwsClient : public WebsocketsClientImpl, public karere::DeleteTrackable
+class Socket : public ws::Socket, public karere::DeleteTrackable
 {
 public:
     ws_t mWebSocket = nullptr;
-    void *appCtx;
+    void *mAppCtx;
 
     static void websockConnectCb(ws_t ws, void* arg);
     static void websockCloseCb(ws_t ws, int errcode, int errtype, const char *reason, size_t reason_len, void *arg);
     static void websockMsgCb(ws_t ws, char *msg, uint64_t len, int binary, void *arg);
     
-    LibwsClient(::mega::Mutex *mutex, WebsocketsClient *client, void *ctx);
-    virtual ~LibwsClient();
+    Socket(Client& client, EventHandler *handler);
+    virtual ~Socket();
     
-    virtual bool wsSendMessage(char *msg, size_t len);
-    virtual void wsDisconnect(bool immediate);
-    virtual bool wsIsConnected();
+    virtual bool sendMessage(char *msg, size_t len);
+    virtual void disconnect(bool immediate);
+    virtual bool isConnected();
 };
 
 #endif /* libwsIO_h */

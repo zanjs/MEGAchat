@@ -30,7 +30,6 @@
 //#endif
 #include <megaapi.h>
 #include <megaapi_impl.h>
-
 #include <rtcModule/webrtc.h>
 #include <IVideoRenderer.h>
 #include <chatClient.h>
@@ -44,22 +43,15 @@
 
 #include <stdint.h>
 
-#ifdef USE_LIBWEBSOCKETS
+#include <appCtx.h>
+typedef karere::KarereWaiter MegaChatWaiter;
 
-#include "net/libwebsocketsIO.h"
-#include "waiter/libuvWaiter.h"
-
-typedef LibwebsocketsIO MegaWebsocketsIO;
-typedef ::mega::LibuvWaiter MegaChatWaiter;
-
+#ifdef KR_USE_LIBWEBSOCKETS
+    #include "net/libwebsocketsIO.h"
+    typedef libwebsockets::IO MegaWebsocketsIO;
 #else
-
-#include "net/libwsIO.h"
-#include "waiter/libeventWaiter.h"
-
-typedef LibwsIO MegaWebsocketsIO;
-typedef ::mega::LibeventWaiter MegaChatWaiter;
-
+    #include "net/libwsIO.h"
+    typedef LibwsIO MegaWebsocketsIO;
 #endif
 
 namespace megachat
@@ -661,7 +653,8 @@ public:
 
 class MegaChatApiImpl :
         public karere::IApp,
-        public karere::IApp::IChatListHandler
+        public karere::IApp::IChatListHandler,
+        public karere::AppCtx
 {
 public:
 
@@ -669,11 +662,10 @@ public:
     virtual ~MegaChatApiImpl();
 
     mega::MegaMutex sdkMutex;
-    mega::Waiter *waiter;
 private:
     MegaChatApi *chatApi;
     mega::MegaApi *megaApi;
-    WebsocketsIO *websocketsIO;
+    ws::IO *websocketsIO;
     karere::Client *mClient;
     bool terminating;
 
@@ -710,9 +702,6 @@ private:
     void sendAttachNodesMessage(std::string buffer, MegaChatRequestPrivate* request);
 
 public:
-    static void megaApiPostMessage(void* msg, void* ctx);
-    void postMessage(void *msg);
-
     void sendPendingRequests();
     void sendPendingEvents();
 
@@ -723,7 +712,7 @@ public:
 
     int init(const char *sid);
     int getInitState();
-
+    virtual void postMessage(MarshallMessage *msg);
     MegaChatRoomHandler* getChatRoomHandler(MegaChatHandle chatid);
     void removeChatRoomHandler(MegaChatHandle chatid);
 

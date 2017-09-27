@@ -3,7 +3,6 @@
 
 #include <string>
 #include <logger.h>
-#include <cservices.h> //needed for timestampMs()
 #include <string.h>
 
 /** @cond PRIVATE */
@@ -86,11 +85,11 @@ static inline string to_string(const T& t)
 
 /** @endcond PRIVATE */
 
-class MyMegaApi;
-
 namespace karere
 {
 class Client;
+class MyMegaApi;
+
 typedef std::map<std::string, std::string> StringMap;
 
 /** @brief Globally initializes the karere library and starts the services
@@ -104,12 +103,15 @@ typedef std::map<std::string, std::string> StringMap;
  * @param options Various flags that modify the behaviour of the karere
  * services subsystem. Normally this is 0
  */
-void globalInit(void(*postFunc)(void*, void*), uint32_t options=0, const char* logPath=nullptr, size_t logSize=0);
+void globalInit(uint32_t options=0, const char* logPath=nullptr, size_t logSize=0);
 
 /** @brief Stops the karere services susbsystem and frees global resources
  * used by Karere
  */
 void globalCleanup();
+/** @brief Obtain the eventloop from an opaque appCtx pointer.
+ *  This can be a libevent or libuv eventloop
+ */
 
 /** @cond PRIVATE */
 
@@ -167,7 +169,7 @@ extern const char* gDbSchemaVersionSuffix;
 // This option should be used only in development/debugging
 extern bool gCatchException;
 
-static inline int64_t timestampMs() { return services_get_time_ms(); }
+//static inline int64_t timestampMs() { return services_get_time_ms(); }
 
 //logging stuff
 

@@ -2,22 +2,44 @@ cmake_minimum_required(VERSION 2.8)
 project(services)
 include(../utils.cmake)
 
+set(optServicesUseLibuv 1 CACHE BOOL "Use libuv instead of libevent")
 set(optServicesBuildShared 0 CACHE BOOL "Build libservices as a shared lib, for use of the async services by several shared objects")
 set(optAsanMode "" CACHE STRING "Build with AddressSanitizer, in the specified mode (-fsanitize=<mode>, i.e. address,memory) Requires GCC>= 4.9 or Clang>=3.5")
 
 set(SRCS
-  cservices.cpp
   logger.cpp
+  appCtx.cpp
 )
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
-find_package(LibEvent REQUIRED)
-find_package(CURL REQUIRED)
 
-set(SERVICES_INCLUDE_DIRS
-   ${LIBEVENT_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS}
-   ${CMAKE_CURRENT_SOURCE_DIR}
+find_package(CURL REQUIRED)
+if (optServicesUseLibuv)
+    find_package(LibUV REQUIRED)
+    set(SERVICES_INCLUDE_DIRS ${LibUV_INCLUDE_DIR})
+    set(SERVICES_DEP_LIBS ${LibUV_LIBRARY})
+    set(KR_USE_LIBUV 1)
+    set(KR_USE_LIBWEBSOCKETS 1)
+    list(APPEND SRCS
+        ../waiter/libuvWaiter.cpp
+    )
+else()
+    find_package(LibEvent REQUIRED)
+    add_subdirectory(${LIBWS_DIR} libws)
+    set(SERVICES_INCLUDE_DIRS ${LIBEVENT_INCLUDE_DIRS} ${LIBWS_DIR}/src ${CMAKE_CURRENT_BINARY_DIR}/libws)
+    set(SERVICES_DEP_LIBS {LIBEVENT_LIBRARIES})
+    list(APPEND SRCS
+        ../waiter/libeventWaiter.cpp
+    )
+    set(LIBWS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/libws CACHE PATH "libws source dir, where its CMakeLists.txt is located")
+    set(LIBWS_EXTERNAL_LOOP 1 CACHE BOOL "Use libws with external libevent loop")
+endif()
+
+list(APPEND SERVICES_INCLUDE_DIRS
+     ${CURL_INCLUDE_DIRS}
+     ${CMAKE_CURRENT_SOURCE_DIR}
+     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 set_property(GLOBAL PROPERTY SERVICES_INCLUDE_DIRS ${SERVICES_INCLUDE_DIRS})
@@ -49,40 +71,20 @@ if (CLANG_STDLIB)
     list(APPEND SYSLIBS ${CLANG_STDLIB})
 endif()
 
-# We need to export getAppDataDir() from the app executable back to the logger lib,
-# so that the logger knows where to create the log file.
-# If the logger and the app are in the same module, no special processing is needed.
-# But if the logger is in another module (i.e. libservices is a shared lib),
-# then we need to do it via a weak symbol
-
-if (APPLE)
-    set(GET_APPDATA_DIR_WEAKLINK_FLAGS "-Wl,-U,__ZN6karere9getAppDirEv" CACHE "" INTERNAL FORCE)
-elseif(NOT WIN32)
-    set(GET_APPDATA_DIR_WEAKLINK_FLAGS "-Wl,-u,__ZN6karere9getAppDirEv" CACHE "" INTERNAL FORCE)
-else()
-    set(GET_APPDATA_DIR_WEAKLINK_FLAGS CACHE "" INTERNAL FORCE)
-    message(WARNING "Don't know how to export a weak symbol on this platform, getAppDataDir() may fail to be exported by app executable if linking dynamically")
-endif()
-
 if (WIN32)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS /wd4800 /wd4996)
 endif()
 
 if (optServicesBuildShared)
     add_definitions(-DMEGAIO_DLL)
-# Put the application-provided std::string karere::getAppDir() function
-# (declared as a weak symbol in loggerChannelConfig.h) in the import table
-# of the libservices shared object instead of looking for its definition
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${GET_APPDATA_DIR_WEAKLINK_FLAGS}")
     add_library(services SHARED ${SRCS})
 else()
     add_library(services ${SRCS})
 endif()
 
-set(SERVICES_DEP_LIBS
-  ${LIBEVENT_LIBRARIES}
+list(APPEND SERVICES_DEP_LIBS
   ${CURL_LIBRARIES}
   ${SYSLIBS}
 )
-
+configure_file(services-config.h.in services-config.h @ONLY)
 target_link_libraries(services ${SERVICES_DEP_LIBS})

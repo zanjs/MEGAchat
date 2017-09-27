@@ -5,7 +5,6 @@
 #include "qmessagebox.h"
 #include <string>
 #include <videoRenderer_Qt.h>
-#include <gcm.h>
 #include "rtcModule/webrtc.h"
 #include <iostream>
 //#include <rapidjson/document.h>
@@ -452,10 +451,10 @@ void MainWindow::onInitStateChange(int newState)
     else if (newState == karere::Client::kInitErrSidInvalid)
     {
         hide();
-        marshallCall([this]()
+        mClient->marshallCall([this]()
         {
             Q_EMIT esidLogout();
-        }, NULL);
+        });
     }
 
 
@@ -502,7 +501,7 @@ void MainWindow::onSettingsBtn(bool)
 void CListGroupChatItem::setTitle()
 {
     auto title = QInputDialog::getText(this, tr("Change chat title"), tr("Please enter chat title"));
-    mRoom.setTitle(title.isNull() ? std::string() : title.toStdString())
+    room().setTitle(title.isNull() ? std::string() : title.toStdString())
     .fail([](const promise::Error& err)
     {
         GUI_LOG_ERROR("Error setting chat title: %s", err.what());

@@ -429,6 +429,7 @@ public:
     Contact(ContactList& clist, const uint64_t& userid, const std::string& email,
             int visibility, int64_t since, PeerChatRoom* room = nullptr);
     ~Contact();
+    ContactList& clist() { return mClist; }
 /** @endcond PRIVATE */
 
     /** @brief The contactlist object which this contact is member of */
@@ -536,7 +537,8 @@ class Client: public rtcModule::IGlobalHandler,
               public ::mega::MegaGlobalListener,
               public ::mega::MegaRequestListener,
               public presenced::Listener,
-              public karere::DeleteTrackable
+              public karere::DeleteTrackable,
+              public karere::AppCtxRef
 {
 public:
     enum ConnState { kDisconnected = 0, kConnecting, kDisconnecting, kConnected };
@@ -618,8 +620,7 @@ public:
         kInitErrSidInvalid
     };
 
-    WebsocketsIO *websocketIO;
-    void *appCtx;
+    ws::IO *websocketIO;
     SqliteDb db;
     std::unique_ptr<chatd::Client> chatd;
     MyMegaApi api;
@@ -667,8 +668,8 @@ public:
      * inconsistent, karere will behave as if \c false was specified - will
      * delete the karere.db file and re-create it from scratch.
      */
-    Client(::mega::MegaApi& sdk, WebsocketsIO *websocketsIO, IApp& app, const std::string& appDir,
-           uint8_t caps, void *ctx = NULL);
+    Client(::mega::MegaApi& sdk, ws::IO *websocketsIO, IApp& app, const std::string& appDir,
+           uint8_t caps, AppCtx& ctx);
 
     virtual ~Client();
 
@@ -819,7 +820,7 @@ protected:
     presenced::Client mPresencedClient;
     std::string mPresencedUrl;
     UserAttrCache::Handle mOwnNameAttrHandle;
-    megaHandle mHeartbeatTimer = 0;
+    TimerHandle mHeartbeatTimer;
     std::string mLastScsn;
     void heartbeat();
     InitState mInitState = kInitCreated;

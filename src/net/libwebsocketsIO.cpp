@@ -1,23 +1,25 @@
-#include "net/libwebsocketsIO.h"
-#include "waiter/libuvWaiter.h"
+#include "libwebsocketsIO.h"
+#include "../waiter/libuvWaiter.h"
 
 #include <mega/http.h>
 #include <assert.h>
+#include "libwebsocketsIO.h"
 
 using namespace std;
-
+namespace libwebsockets
+{
 static struct lws_protocols protocols[] =
 {
     {
         "MEGAchat",
-        LibwebsocketsClient::wsCallback,
+        Socket::wsCallback,
         0,
         128 * 1024, // Rx buffer size
     },
     { NULL, NULL, 0, 0 } /* terminator */
 };
 
-LibwebsocketsIO::LibwebsocketsIO(::mega::Mutex *mutex, void *ctx) : WebsocketsIO(mutex, ctx)
+IO::IO(::mega::Mutex *mutex, karere::AppCtx& ctx): ws::IO(mutex, ctx)
 {
     struct lws_context_creation_info info;
     memset( &info, 0, sizeof(info) );
@@ -36,36 +38,39 @@ LibwebsocketsIO::LibwebsocketsIO(::mega::Mutex *mutex, void *ctx) : WebsocketsIO
     lws_set_log_level(LLL_ERR | LLL_INFO | LLL_USER | LLL_WARN | LLL_COUNT
                       | LLL_CLIENT | LLL_HEADER | LLL_NOTICE
                       | LLL_LATENCY, NULL);
-    
+
     wscontext = lws_create_context(&info);
-    initialized = false;
+#ifdef LWS_USE_LIBUV
+    lws_uv_sigint_cfg(wscontext, 0, nullptr);
+#endif
 }
 
-LibwebsocketsIO::~LibwebsocketsIO()
+IO::~IO()
 {
     lws_context_destroy(wscontext);
 }
 
-void LibwebsocketsIO::addevents(::mega::Waiter* waiter, int)
+void IO::addevents(::mega::Waiter* waiter, int)
 {    
-    if (!initialized)
-    {
-        ::mega::LibuvWaiter *libuvWaiter = dynamic_cast<::mega::LibuvWaiter *>(waiter);
-        if (!libuvWaiter)
-        {
-            exit(0);
-        }
-        lws_uv_initloop(wscontext, libuvWaiter->eventloop, 0);
-        WEBSOCKETS_LOG_DEBUG("Libwebsockets is using libuv");
+    if (mIsInitialized)
+        return;
 
-        initialized = true;
-    }
+    karere::LibuvWaiter *libuvWaiter = dynamic_cast<karere::KarereWaiter*>(waiter);
+    assert(libuvWaiter);
+    registerWithEventLoop(libuvWaiter->loop());
 }
 
-
-WebsocketsClientImpl *LibwebsocketsIO::wsConnect(const char *ip, const char *host, int port, const char *path, bool ssl, WebsocketsClient *client)
+void IO::registerWithEventLoop(void* eventloop)
 {
-    LibwebsocketsClient *libwebsocketsClient = new LibwebsocketsClient(mutex, client);
+    lws_uv_initloop(wscontext, (uv_loop_t*)eventloop, 0);
+    WEBSOCKETS_LOG_DEBUG("Libwebsockets is using libuv");
+    mIsInitialized = true;
+}
+
+ws::Socket *IO::connect(ws::wsClient& client, const char *ip, const char *host, int port, const char *path,
+    bool ssl, ws::EventHandler *handler)
+{
+    std::unique_ptr<Socket> socket(new Socket(client, handler));
     
     std::string cip = ip;
     if (cip[0] == '[')
@@ -85,29 +90,22 @@ WebsocketsClientImpl *LibwebsocketsIO::wsConnect(const char *ip, const char *hos
     i.path = urlpath.c_str();
     i.host = host;
     i.ietf_version_or_minus_one = -1;
-    i.userdata = libwebsocketsClient;
+    i.userdata = socket.get();
     
-    libwebsocketsClient->wsi = lws_client_connect_via_info(&i);
-    if (!libwebsocketsClient->wsi)
+    socket->wsi = lws_client_connect_via_info(&i);
+    if (!socket->wsi)
     {
-        delete libwebsocketsClient;
         return NULL;
     }
-    return libwebsocketsClient;
+    return socket.release();
 }
 
-LibwebsocketsClient::LibwebsocketsClient(::mega::Mutex *mutex, WebsocketsClient *client) : WebsocketsClientImpl(mutex, client)
+Socket::~Socket()
 {
-    wsi = NULL;
-    disconnecting = false;
+    disconnect(true);
 }
 
-LibwebsocketsClient::~LibwebsocketsClient()
-{
-    wsDisconnect(true);
-}
-
-void LibwebsocketsClient::appendMessageFragment(char *data, size_t len, size_t remaining)
+void Socket::appendMessageFragment(char *data, size_t len, size_t remaining)
 {
     if (!recbuffer.size() && remaining)
     {
@@ -116,27 +114,27 @@ void LibwebsocketsClient::appendMessageFragment(char *data, size_t len, size_t r
     recbuffer.append(data, len);
 }
 
-bool LibwebsocketsClient::hasFragments()
+bool Socket::hasFragments()
 {
     return recbuffer.size();
 }
 
-const char *LibwebsocketsClient::getMessage()
+const char *Socket::getMessage()
 {
     return recbuffer.data();
 }
 
-size_t LibwebsocketsClient::getMessageLength()
+size_t Socket::getMessageLength()
 {
     return recbuffer.size();
 }
 
-void LibwebsocketsClient::resetMessage()
+void Socket::resetMessage()
 {
     recbuffer.clear();
 }
 
-bool LibwebsocketsClient::wsSendMessage(char *msg, size_t len)
+bool Socket::sendMessage(char *msg, size_t len)
 {
     assert(wsi);
     
@@ -154,7 +152,7 @@ bool LibwebsocketsClient::wsSendMessage(char *msg, size_t len)
     return lws_callback_on_writable(wsi) > 0;
 }
 
-void LibwebsocketsClient::wsDisconnect(bool immediate)
+void Socket::disconnect(bool immediate)
 {
     if (!wsi)
     {
@@ -187,22 +185,22 @@ void LibwebsocketsClient::wsDisconnect(bool immediate)
     }
 }
 
-bool LibwebsocketsClient::wsIsConnected()
+bool Socket::isConnected()
 {
     return wsi != NULL;
 }
 
-const char *LibwebsocketsClient::getOutputBuffer()
+const char *Socket::getOutputBuffer()
 {
     return sendbuffer.size() ? sendbuffer.data() + LWS_PRE : NULL;
 }
 
-size_t LibwebsocketsClient::getOutputBufferLength()
+size_t Socket::getOutputBufferLength()
 {
     return sendbuffer.size() ? sendbuffer.size() - LWS_PRE : 0;
 }
 
-void LibwebsocketsClient::resetOutputBuffer()
+void Socket::resetOutputBuffer()
 {
     sendbuffer.clear();
 }
@@ -274,7 +272,7 @@ static bool check_public_key(X509_STORE_CTX* ctx)
     return false;
 }
 
-int LibwebsocketsClient::wsCallback(struct lws *wsi, enum lws_callback_reasons reason,
+int Socket::wsCallback(struct lws *wsi, enum lws_callback_reasons reason,
                                     void *user, void *data, size_t len)
 {
     switch (reason)
@@ -289,81 +287,82 @@ int LibwebsocketsClient::wsCallback(struct lws *wsi, enum lws_callback_reasons r
         }
         case LWS_CALLBACK_CLIENT_ESTABLISHED:
         {
-            LibwebsocketsClient* client = (LibwebsocketsClient*)user;
-            if (!client)
+            Socket* self = static_cast<Socket*>(user);
+            if (!self)
             {
                 return -1;
             }
-            
-            client->wsConnectCb();
+
+            self->wsConnectCb();
             break;
         }
         case LWS_CALLBACK_CLOSED:
         case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
         {
-            LibwebsocketsClient* client = (LibwebsocketsClient*)user;
-            if (!client)
+            auto self = static_cast<Socket*>(user);
+            if (!self)
             {
                 WEBSOCKETS_LOG_DEBUG("Forced disconnect completed");
                 return -1;
             }
-            
+
             WEBSOCKETS_LOG_DEBUG("Graceful disconnect completed");
-            client->disconnecting = false;
-            client->wsCloseCb(0, 0, "", 0);
+            self->disconnecting = false;
+            self->wsCloseCb(0, 0, "", 0);
             break;
         }
             
         case LWS_CALLBACK_CLIENT_RECEIVE:
         {
-            LibwebsocketsClient* client = (LibwebsocketsClient*)user;
-            if (!client)
+            auto self = static_cast<Socket*>(user);
+            if (!self)
             {
                 return -1;
             }
-            
+
             const size_t remaining = lws_remaining_packet_payload(wsi);
             if (!remaining && lws_is_final_fragment(wsi))
             {
-                if (client->hasFragments())
+                if (self->hasFragments())
                 {
                     WEBSOCKETS_LOG_DEBUG("Fragmented data completed");
-                    client->appendMessageFragment((char *)data, len, 0);
-                    data = (void *)client->getMessage();
-                    len = client->getMessageLength();
+                    self->appendMessageFragment((char *)data, len, 0);
                 }
-                
-                client->wsHandleMsgCb((char *)data, len);
-                client->resetMessage();
+                // We send the (rvalue ref) string itself to the callback, because if it needs
+                // to post it to another thread, the string would avoid copying of the data
+                self->wsHandleMsgCb(std::forward<std::string>(self->recbuffer));
+                // After  a std::move, the source is left in valid, but unspecified state.
+                // We must clear it
+                self->resetMessage();
             }
             else
             {
                 WEBSOCKETS_LOG_DEBUG("Managing fragmented data");
-                client->appendMessageFragment((char *)data, len, remaining);
+                self->appendMessageFragment((char *)data, len, remaining);
             }
             break;
         }
         case LWS_CALLBACK_CLIENT_WRITEABLE:
         {
-            LibwebsocketsClient* client = (LibwebsocketsClient*)user;
-            if (!client)
+            auto* self = static_cast<Socket*>(user);
+            if (!self)
             {
                 WEBSOCKETS_LOG_DEBUG("Completing forced disconnect");
                 return -1;
             }
-            
-            if (client->disconnecting)
+
+            if (self->disconnecting)
             {
                 WEBSOCKETS_LOG_DEBUG("Completing graceful disconnect");
                 return -1;
             }
             
-            data = (void *)client->getOutputBuffer();
-            len = client->getOutputBufferLength();
+            data = (void *)self->getOutputBuffer();
+            len = self->getOutputBufferLength();
             if (len && data)
             {
                 lws_write(wsi, (unsigned char *)data, len, LWS_WRITE_BINARY);
-                client->resetOutputBuffer();
+                self->resetOutputBuffer();
             }
             break;
         }
@@ -374,3 +373,4 @@ int LibwebsocketsClient::wsCallback(struct lws *wsi, enum lws_callback_reasons r
     return 0;
 }
 
+}

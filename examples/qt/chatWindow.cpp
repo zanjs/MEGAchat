@@ -45,8 +45,7 @@ ChatWindow::~ChatWindow()
     GUI_LOG_DEBUG("Destroying chat window for chat %s", Id(mRoom.chatid()).toString().c_str());
     if (mUpdateSeenTimer)
     {
-        cancelTimeout(mUpdateSeenTimer, NULL);
-        mUpdateSeenTimer = 0;
+        mUpdateSeenTimer.cancel();
     }
 }
 #ifndef KARERE_DISABLE_WEBRTC
@@ -192,7 +191,7 @@ void ChatWindow::onMemberPrivateChat()
 
 void ChatWindow::onMembersBtn(bool)
 {
-    marshallCall([this]()
+    client.marshallCall([this]()
     {
         QMenu menu(this);
         createMembersMenu(menu);
@@ -200,7 +199,7 @@ void ChatWindow::onMembersBtn(bool)
         menu.adjustSize();
         menu.exec(ui.mMembersBtn->mapToGlobal(
             QPoint(-menu.width()+ui.mMembersBtn->width(), ui.mMembersBtn->height())));
-    }, NULL);
+    });
 }
 void ChatWindow::dropEvent(QDropEvent* event)
 {
@@ -319,8 +318,8 @@ void ChatWindow::showCantEditNotice(const QString& action)
 {
     WaitMsg tooltip(*this);
     tooltip.addMsg(tr("Can't %1 - message is too old").arg(action));
-    setTimeout([tooltip]()
-    {}, 2000, NULL);
+    client.setTimeout([tooltip]()
+    {}, 2000);
 }
 
 void ChatWindow::onUnsentEditLoaded(chatd::Message& editmsg, bool oriMsgIsSending)
@@ -505,7 +504,7 @@ void MessageWidget::msgDeleted()
     a->setDuration(300);
     a->setEasingCurve(QEasingCurve::Linear);
     a->start(QAbstractAnimation::DeleteWhenStopped);
-    setTimeout([this]() { removeFromList(); }, 300, NULL);
+    mChatWindow.client.setTimeout([this]() { removeFromList(); }, 300);
 }
 
 void MessageWidget::removeFromList()

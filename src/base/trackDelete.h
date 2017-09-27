@@ -1,6 +1,8 @@
 #ifndef TRACKDELETE_H
 #define TRACKDELETE_H
 #include <atomic>
+#include <assert.h>
+
 namespace karere
 {
 /** @brief Used to keep track of deletion of a lambda-captured object
@@ -123,6 +125,7 @@ public:
         }
         T* operator->() { return weakPtr(); }
         const T* operator->() const { return weakPtr(); }
+        operator bool() const { return isValid(); }
     };
 protected:
     WeakRefHandle mWeakRefHandle;

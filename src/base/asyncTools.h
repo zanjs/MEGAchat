@@ -2,7 +2,6 @@
 #define _ASYNC_TOOLS_H
 
 #include <promise.h>
-#include <gcmpp.h>
 #include <type_traits>
 
 namespace async
@@ -32,10 +31,10 @@ protected:
     C mCondition;
     X mIncrement;
     F mFunc;
-    void *appCtx;
+    karere::AppCtx& appCtx;
     
 public:
-    StateBase(I aInitial, C&& aCond, X&& aInc, F&& aFunc, void *ctx)
+    StateBase(I aInitial, C&& aCond, X&& aInc, F&& aFunc, karere::AppCtx& ctx)
     : Loop<I>(aInitial), mCondition(std::forward<C>(aCond)),
     mIncrement(std::forward<X>(aInc)), mFunc(std::forward<F>(aFunc)), appCtx(ctx) {}
     promise::Promise<P> mOutput;
@@ -63,7 +62,7 @@ struct State: public StateBase<I,C,X,F>
             this->mIncrement(this->i);
             if (this->mCondition(this->i))
             {
-                karere::marshallCall([this](){nextIter();}, this->appCtx);
+                this->appCtx.marshallCall([this](){ nextIter(); });
                 return;
             }
 bail:
@@ -96,7 +95,7 @@ struct State<I,C,X,F,void>: public StateBase<I,C,X,F>
             this->mIncrement(this->i);
             if (this->mCondition(this->i))
             {
-                karere::marshallCall([this](){nextIter();}, this->appCtx);
+                this->appCtx.marshallCall([this](){nextIter();});
                 return;
             }
 bail:
@@ -108,7 +107,7 @@ bail:
 
 template <class I, class C, class X, class F>
 typename std::result_of<F(Loop<I>&)>::type
-loop(I initial, C&& cond, X&& inc, F&& func, void *ctx)
+loop(I initial, C&& cond, X&& inc, F&& func, karere::AppCtx& ctx)
 {
     typedef typename std::result_of<F(Loop<I>&)>::type::Type P;
 

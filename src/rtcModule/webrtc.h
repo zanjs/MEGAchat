@@ -291,6 +291,7 @@ struct VidEncParams
 class IRtcModule: public karere::DeleteTrackable
 {
 protected:
+    karere::Client& mClient;
     IGlobalHandler& mHandler;
     std::unique_ptr<IRtcCrypto> mCrypto;
     karere::Id mOwnAnonId;
@@ -298,10 +299,9 @@ protected:
     std::string mAudioInDeviceName;
     IRtcModule(karere::Client& client, IGlobalHandler& handler, IRtcCrypto* crypto,
         karere::Id ownAnonId)
-        :mClient(client), mHandler(handler), mCrypto(crypto), mOwnAnonId(ownAnonId) {}
+    : mClient(client), mHandler(handler), mCrypto(crypto), mOwnAnonId(ownAnonId) {}
 public:
-    karere::Client& mClient;
-
+    karere::Client& client() const { return mClient; }
     /** @brief Default video encoding parameters. */
     VidEncParams vidEncParams;
     virtual promise::Promise<void> init(unsigned gelbTimeout) = 0;

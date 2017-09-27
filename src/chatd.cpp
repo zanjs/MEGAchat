@@ -78,8 +78,8 @@ bool gLogKeepalives = false;
 // message storage subsystem
 // the message buffer can grow in two directions and is always contiguous, i.e. there are no "holes"
 // there is no guarantee as to ordering
-Client::Client(karere::Client *client, Id userId)
-:mUserId(userId), mApi(&client->api), karereClient(client)
+Client::Client(karere::Client& client, Id userId)
+:AppCtxRef(client), mUserId(userId), karereClient(client)
 {
 }
 
@@ -184,8 +184,8 @@ void Chat::login()
         join();
 }
 
-Connection::Connection(Client& client, int shardNo)
-: mClient(client), mShardNo(shardNo),
+Connection::Connection(::chatd::Client& client, int shardNo)
+: wsClient(client), mClient(client), mShardNo(shardNo),
   mIdentity((static_cast<uint64_t>(rand()) << 32) | time(NULL))
 {}
 
@@ -197,16 +197,7 @@ void Connection::wsConnectCb()
     mConnectPromise.resolve();
 }
 
-void Connection::wsCloseCb(int errcode, int errtype, const char *preason, size_t reason_len)
-{
-    string reason;
-    if (preason)
-        reason.assign(preason, reason_len);
-    
-    onSocketClose(errcode, errtype, reason);
-}
-
-void Connection::onSocketClose(int errcode, int errtype, const std::string& reason)
+void Connection::wsCloseCb(int errcode, int errtype, const std::string& reason)
 {
     CHATD_LOG_WARNING("Socket close on connection to shard %d. Reason: %s",
         mShardNo, reason.c_str());
@@ -251,8 +242,7 @@ void Connection::disableInactivityTimer()
 {
     if (mInactivityTimer)
     {
-        cancelInterval(mInactivityTimer, mClient.karereClient->appCtx);
-        mInactivityTimer = 0;
+        mInactivityTimer.cancel();
     }
 }
 bool Connection::sendKeepalive(uint8_t opcode)
@@ -293,7 +283,7 @@ Promise<void> Connection::reconnect(const std::string& url)
                     chat.setOnlineState(kChatStateConnecting);                
             }
             auto wptr = weakHandle();
-            this->mClient.mApi->call(&::mega::MegaApi::queryDNS, mUrl.host.c_str())
+            mClient.karereClient.api.call(&::mega::MegaApi::queryDNS, mUrl.host.c_str())
             .then([wptr, this](ReqResult result)
             {
                 if (wptr.deleted())
@@ -310,7 +300,7 @@ Promise<void> Connection::reconnect(const std::string& url)
                 mState = kStateConnecting;
                 string ip = result->getText();
                 CHATD_LOG_DEBUG("Connecting to chatd (shard %d) using the IP: %s", mShardNo, ip.c_str());
-                bool rt = wsConnect(this->mClient.karereClient->websocketIO, ip.c_str(),
+                bool rt = wsConnect(mClient.karereClient.websocketIO, ip.c_str(),
                           mUrl.host.c_str(),
                           mUrl.port,
                           mUrl.path.c_str(),
@@ -337,7 +327,7 @@ Promise<void> Connection::reconnect(const std::string& url)
                 sendCommand(Command(OP_CLIENTID)+mIdentity);
                 return rejoinExistingChats();
             });
-        }, mClient.karereClient->appCtx, nullptr, 0, 0, KARERE_RECONNECT_DELAY_MAX, KARERE_RECONNECT_DELAY_INITIAL);
+        }, mClient.karereClient, nullptr, 0, 0, KARERE_RECONNECT_DELAY_MAX, KARERE_RECONNECT_DELAY_INITIAL);
     }
     KR_EXCEPTION_TO_PROMISE(kPromiseErrtype_chatd);
 }
@@ -347,7 +337,7 @@ void Connection::enableInactivityTimer()
     if (mInactivityTimer)
         return;
 
-    mInactivityTimer = setInterval([this]()
+    mInactivityTimer = mClient.setInterval([this]()
     {
         if (mInactivityBeats++ > 3)
         {
@@ -357,7 +347,7 @@ void Connection::enableInactivityTimer()
                 mShardNo);
             reconnect();
         }
-    }, 10000, mClient.karereClient->appCtx);
+    }, 10000);
 }
 
 promise::Promise<void> Connection::disconnect(int timeoutMs) //should be graceful disconnect
@@ -365,18 +355,18 @@ promise::Promise<void> Connection::disconnect(int timeoutMs) //should be gracefu
     mTerminating = true;
     if (!wsIsConnected())
     {
-        onSocketClose(0, 0, "terminating");
+        wsCloseCb(0, 0, "terminating");
         return promise::Void();
     }
     
     auto wptr = getDelTracker();
-    setTimeout([this, wptr]()
+    mClient.setTimeout([this, wptr]()
     {
         if (wptr.deleted())
             return;
         if (!mDisconnectPromise.done())
             mDisconnectPromise.resolve();
-    }, timeoutMs, mClient.karereClient->appCtx);
+    }, timeoutMs);
     
     wsDisconnect(false);
     return mDisconnectPromise;
@@ -670,14 +660,14 @@ HistSource Chat::getHistoryFromDbOrServer(unsigned count)
                 return kHistSourceServerOffline;
 
             auto wptr = weakHandle();
-            marshallCall([wptr, this, count]()
+            mClient.marshallCall([wptr, this, count]()
             {
                 if (wptr.deleted())
                     return;
                 
                 CHATID_LOG_DEBUG("Fetching history(%u) from server...", count);
                 requestHistoryFromServer(-count);
-            }, mClient.karereClient->appCtx);
+            });
         }
         return kHistSourceServer;
     }
@@ -698,9 +688,9 @@ void Chat::requestHistoryFromServer(int32_t count)
 Chat::Chat(Connection& conn, Id chatid, Listener* listener,
     const karere::SetOfIds& initialUsers, uint32_t chatCreationTs,
     ICrypto* crypto, bool isGroup)
-    : mConnection(conn), mClient(conn.mClient), mChatId(chatid),
-      mListener(listener), mUsers(initialUsers), mCrypto(crypto),
-      mLastMsgTs(chatCreationTs), mIsGroup(isGroup)
+: mClient(conn.mClient), mConnection(conn), mChatId(chatid),
+  mListener(listener), mUsers(initialUsers), mCrypto(crypto),
+  mLastMsgTs(chatCreationTs), mIsGroup(isGroup)
 {
     assert(mChatId);
     assert(mListener);
@@ -796,10 +786,10 @@ Idx Chat::getHistoryFromDb(unsigned count)
 #define READ_8(varname, offset)\
     assert(offset==pos-base); uint8_t varname(buf.read<uint8_t>(pos)); pos+=1
 
-void Connection::wsHandleMsgCb(char *data, size_t len)
+void Connection::wsHandleMsgCb(string&& data)
 {
     mInactivityBeats = 0;
-    execCommand(StaticBuffer(data, len));
+    execCommand(StaticBuffer(data.data(), data.size()));
 }
     
 // inbound command processing
@@ -1305,13 +1295,13 @@ Message* Chat::msgSubmit(const char* msg, size_t msglen, unsigned char type, voi
     message->backRefId = generateRefId(mCrypto);
 
     auto wptr = weakHandle();
-    marshallCall([wptr, this, message]()
+    mClient.marshallCall([wptr, this, message]()
     {
         if (wptr.deleted())
             return;
         
         msgSubmit(message);
-    }, mClient.karereClient->appCtx);
+    });
     return message;
 }
 void Chat::msgSubmit(Message* msg)
@@ -1476,14 +1466,14 @@ Message* Chat::msgModify(Message& msg, const char* newdata, size_t newlen, void*
 
     auto wptr = weakHandle();
     uint32_t newage = msg.ts + age;
-    marshallCall([wptr, this, newage, upd]()
+    mClient.marshallCall([wptr, this, newage, upd]()
     {
         if (wptr.deleted())
             return;
         
         postMsgToSending(upd->isSending() ? OP_MSGUPDX : OP_MSGUPD, upd);
         onMsgTimestamp(newage);
-    }, mClient.karereClient->appCtx);
+    });
     
     return upd;
 }
@@ -1629,7 +1619,7 @@ bool Chat::setMessageSeen(Idx idx)
 
     auto wptr = weakHandle();
     karere::Id id = msg.id();
-    marshallCall([wptr, this, id, idx]()
+    mClient.marshallCall([wptr, this, id, idx]()
     {
         if (wptr.deleted())
             return;
@@ -1660,7 +1650,7 @@ bool Chat::setMessageSeen(Idx idx)
             }
         }
         CALL_LISTENER(onUnreadChanged);
-    }, mClient.karereClient->appCtx);
+    });
     
     return true;
 }
@@ -2711,7 +2701,7 @@ void Chat::findLastTextMsg()
 void Chat::findAndNotifyLastTextMsg()
 {
     auto wptr = weakHandle();
-    marshallCall([wptr, this]() //prevent re-entrancy
+    mClient.marshallCall([wptr, this]() //prevent re-entrancy
     {
         if (wptr.deleted())
             return;
@@ -2719,7 +2709,7 @@ void Chat::findAndNotifyLastTextMsg()
         if (mLastTextMsg.state() == LastTextMsgState::kFetching)
             return;
         notifyLastTextMsg();
-    }, mClient.karereClient->appCtx);
+    });
 }
 
 void Chat::sendTypingNotification()

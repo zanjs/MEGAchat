@@ -37,7 +37,6 @@
 #include <rapidjson/writer.h>
 
 #include "megachatapi_impl.h"
-#include <base/cservices.h>
 #include <base/logger.h>
 #include <IGui.h>
 #include <chatClient.h>
@@ -65,24 +64,19 @@ MegaChatApiImpl::~MegaChatApiImpl()
 {
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_DELETE);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
     thread.join();
 }
 
 void MegaChatApiImpl::init(MegaChatApi *chatApi, MegaApi *megaApi)
 {
-    if (!megaPostMessageToGui)
-    {
-        megaPostMessageToGui = MegaChatApiImpl::megaApiPostMessage;
-    }
-
     this->chatApi = chatApi;
     this->megaApi = megaApi;
 
     this->mClient = NULL;
     this->terminating = false;
-    this->waiter = new MegaChatWaiter();
-    this->websocketsIO = new MegaWebsocketsIO(&sdkMutex, this);
+    this->mWaiter = new MegaChatWaiter();
+    this->websocketsIO = new MegaWebsocketsIO(&sdkMutex, *this);
     
     //Start blocking thread
     threadExit = 0;
@@ -110,9 +104,9 @@ void MegaChatApiImpl::loop()
     {
         sdkMutex.unlock();
 
-        waiter->init(NEVER);
-        waiter->wakeupby(websocketsIO, ::mega::Waiter::NEEDEXEC);
-        waiter->wait();
+        waiter().init(NEVER);
+        waiter().wakeupby(websocketsIO, ::mega::Waiter::NEEDEXEC);
+        waiter().wait();
 
         sdkMutex.lock();
 
@@ -131,27 +125,10 @@ void MegaChatApiImpl::loop()
     }
 }
 
-void MegaChatApiImpl::megaApiPostMessage(void* msg, void* ctx)
-{    
-    MegaChatApiImpl *megaChatApi = (MegaChatApiImpl *)ctx;
-    if (megaChatApi)
-    {
-        megaChatApi->postMessage(msg);
-    }
-    else
-    {
-        // For compatibility with the QT example app,
-        // there are some marshallCall() without context
-        // that don't need to be marshalled using the
-        // intermediate layer
-        megaProcessMessage(msg);
-    }
-}
-
-void MegaChatApiImpl::postMessage(void *msg)
+void MegaChatApiImpl::postMessage(MarshallMessage* msg)
 {
     eventQueue.push(msg);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::sendPendingRequests()
@@ -307,7 +284,7 @@ void MegaChatApiImpl::sendPendingRequests()
                         delete mClient;
                         mClient = NULL;
                         terminating = false;
-                     }, this);
+                     });
                 })
                 .fail([request, this](const promise::Error& e)
                 {
@@ -321,7 +298,7 @@ void MegaChatApiImpl::sendPendingRequests()
                         delete mClient;
                         mClient = NULL;
                         terminating = false;
-                     }, this);
+                     });
                 });
             }
             else
@@ -930,7 +907,7 @@ void MegaChatApiImpl::sendPendingEvents()
     void *msg;
     while ((msg = eventQueue.pop()))
     {
-        megaProcessMessage(msg);
+        processMessage(msg);
     }
 }
 
@@ -981,7 +958,7 @@ int MegaChatApiImpl::init(const char *sid)
     sdkMutex.lock();
     if (!mClient)
     {
-        mClient = new karere::Client(*this->megaApi, websocketsIO, *this, this->megaApi->getBasePath(), karere::kClientIsMobile, this);
+        mClient = new karere::Client(*this->megaApi, websocketsIO, *this, this->megaApi->getBasePath(), karere::kClientIsMobile, *this);
         terminating = false;
     }
 
@@ -1353,14 +1330,14 @@ void MegaChatApiImpl::connect(MegaChatRequestListener *listener)
 {
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_CONNECT, listener);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::disconnect(MegaChatRequestListener *listener)
 {
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_DISCONNECT, listener);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 int MegaChatApiImpl::getConnectionState()
@@ -1393,7 +1370,7 @@ void MegaChatApiImpl::retryPendingConnections(MegaChatRequestListener *listener)
 {
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_RETRY_PENDING_CONNECTIONS, listener);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::logout(MegaChatRequestListener *listener)
@@ -1401,7 +1378,7 @@ void MegaChatApiImpl::logout(MegaChatRequestListener *listener)
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_LOGOUT, listener);
     request->setFlag(true);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::localLogout(MegaChatRequestListener *listener)
@@ -1409,7 +1386,7 @@ void MegaChatApiImpl::localLogout(MegaChatRequestListener *listener)
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_LOGOUT, listener);
     request->setFlag(false);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::setOnlineStatus(int status, MegaChatRequestListener *listener)
@@ -1417,7 +1394,7 @@ void MegaChatApiImpl::setOnlineStatus(int status, MegaChatRequestListener *liste
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_SET_ONLINE_STATUS, listener);
     request->setNumber(status);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::setPresenceAutoaway(bool enable, int64_t timeout, MegaChatRequestListener *listener)
@@ -1426,7 +1403,7 @@ void MegaChatApiImpl::setPresenceAutoaway(bool enable, int64_t timeout, MegaChat
     request->setFlag(enable);
     request->setNumber(timeout);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::setPresencePersist(bool enable, MegaChatRequestListener *listener)
@@ -1434,14 +1411,14 @@ void MegaChatApiImpl::setPresencePersist(bool enable, MegaChatRequestListener *l
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_SET_PRESENCE_PERSIST, listener);
     request->setFlag(enable);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::signalPresenceActivity(MegaChatRequestListener *listener)
 {
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_SIGNAL_ACTIVITY, listener);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 MegaChatPresenceConfig *MegaChatApiImpl::getPresenceConfig()
@@ -1520,7 +1497,7 @@ void MegaChatApiImpl::setBackgroundStatus(bool background, MegaChatRequestListen
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_SET_BACKGROUND_STATUS, listener);
     request->setFlag(background);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::getUserFirstname(MegaChatHandle userhandle, MegaChatRequestListener *listener)
@@ -1528,7 +1505,7 @@ void MegaChatApiImpl::getUserFirstname(MegaChatHandle userhandle, MegaChatReques
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_GET_FIRSTNAME, listener);
     request->setUserHandle(userhandle);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::getUserLastname(MegaChatHandle userhandle, MegaChatRequestListener *listener)
@@ -1536,7 +1513,7 @@ void MegaChatApiImpl::getUserLastname(MegaChatHandle userhandle, MegaChatRequest
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_GET_LASTNAME, listener);
     request->setUserHandle(userhandle);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::getUserEmail(MegaChatHandle userhandle, MegaChatRequestListener *listener)
@@ -1544,7 +1521,7 @@ void MegaChatApiImpl::getUserEmail(MegaChatHandle userhandle, MegaChatRequestLis
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_GET_EMAIL, listener);
     request->setUserHandle(userhandle);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 char *MegaChatApiImpl::getContactEmail(MegaChatHandle userhandle)
@@ -1799,7 +1776,7 @@ void MegaChatApiImpl::createChat(bool group, MegaChatPeerList *peerList, MegaCha
     request->setFlag(group);
     request->setMegaChatPeerList(peerList);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::inviteToChat(MegaChatHandle chatid, MegaChatHandle uh, int privilege, MegaChatRequestListener *listener)
@@ -1809,7 +1786,7 @@ void MegaChatApiImpl::inviteToChat(MegaChatHandle chatid, MegaChatHandle uh, int
     request->setUserHandle(uh);
     request->setPrivilege(privilege);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::removeFromChat(MegaChatHandle chatid, MegaChatHandle uh, MegaChatRequestListener *listener)
@@ -1818,7 +1795,7 @@ void MegaChatApiImpl::removeFromChat(MegaChatHandle chatid, MegaChatHandle uh, M
     request->setChatHandle(chatid);
     request->setUserHandle(uh);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::updateChatPermissions(MegaChatHandle chatid, MegaChatHandle uh, int privilege, MegaChatRequestListener *listener)
@@ -1828,7 +1805,7 @@ void MegaChatApiImpl::updateChatPermissions(MegaChatHandle chatid, MegaChatHandl
     request->setUserHandle(uh);
     request->setPrivilege(privilege);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::truncateChat(MegaChatHandle chatid, MegaChatHandle messageid, MegaChatRequestListener *listener)
@@ -1837,7 +1814,7 @@ void MegaChatApiImpl::truncateChat(MegaChatHandle chatid, MegaChatHandle message
     request->setChatHandle(chatid);
     request->setUserHandle(messageid);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::setChatTitle(MegaChatHandle chatid, const char *title, MegaChatRequestListener *listener)
@@ -1846,7 +1823,7 @@ void MegaChatApiImpl::setChatTitle(MegaChatHandle chatid, const char *title, Meg
     request->setChatHandle(chatid);
     request->setText(title);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 bool MegaChatApiImpl::openChatRoom(MegaChatHandle chatid, MegaChatRoomListener *listener)
@@ -2121,7 +2098,7 @@ void MegaChatApiImpl::attachNodes(MegaChatHandle chatid, MegaNodeList *nodes, Me
     request->setChatHandle(chatid);
     request->setMegaNodeList(nodes);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::attachNode(MegaChatHandle chatid, MegaChatHandle nodehandle, MegaChatRequestListener *listener)
@@ -2130,7 +2107,7 @@ void MegaChatApiImpl::attachNode(MegaChatHandle chatid, MegaChatHandle nodehandl
     request->setChatHandle(chatid);
     request->setUserHandle(nodehandle);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 void MegaChatApiImpl::revokeAttachment(MegaChatHandle chatid, MegaChatHandle handle, MegaChatRequestListener *listener)
@@ -2139,7 +2116,7 @@ void MegaChatApiImpl::revokeAttachment(MegaChatHandle chatid, MegaChatHandle han
     request->setChatHandle(chatid);
     request->setUserHandle(handle);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 bool MegaChatApiImpl::isRevoked(MegaChatHandle chatid, MegaChatHandle nodeHandle)
@@ -2278,7 +2255,7 @@ void MegaChatApiImpl::sendTypingNotification(MegaChatHandle chatid, MegaChatRequ
     MegaChatRequestPrivate *request = new MegaChatRequestPrivate(MegaChatRequest::TYPE_SEND_TYPING_NOTIF, listener);
     request->setChatHandle(chatid);
     requestQueue.push(request);
-    waiter->notify();
+    waiter().notify();
 }
 
 bool MegaChatApiImpl::isMessageReceptionConfirmationActive() const

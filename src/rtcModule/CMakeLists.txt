@@ -20,8 +20,9 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${WEBRTC_CFLAGS}")
 if (NOT WIN32 AND NOT WINPHONE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 endif()
+message(STATUS "incdirs = ${SERVICES_INCLUDE_DIRS}")
 
-include_directories(. .. ../base ../../third-party ${CMAKE_CURRENT_BINARY_DIR}
+include_directories(. .. ../../third-party ${CMAKE_CURRENT_BINARY_DIR}
     ${SERVICES_INCLUDE_DIRS} ${WEBRTC_INCLUDES})
 
 set(RTCMODULE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} CACHE STRING "rtcModule include dirs for dependent projects")

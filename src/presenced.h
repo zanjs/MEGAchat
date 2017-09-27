@@ -5,7 +5,7 @@
 #include <string>
 #include <buffer.h>
 #include <base/promise.h>
-#include <base/timers.hpp>
+#include <base/appCtx.h>
 #include <karereId.h>
 #include "url.h"
 #include <base/trackDelete.h>
@@ -20,12 +20,11 @@ struct ws_s;
 struct ws_base_s;
 typedef struct ws_s *ws_t;
 
-class MyMegaApi;
-
 enum: uint32_t { kPromiseErrtype_presenced = 0x339a92e5 }; //should resemble 'megapres'
 namespace karere
 {
 class Client;    
+class MyMegaApi;
 class Presence
 {
 public:
@@ -234,7 +233,7 @@ struct IdRefMap: public std::map<karere::Id, int>
 
 class Listener;
 
-class Client: public karere::DeleteTrackable, public WebsocketsClient
+class Client: public karere::DeleteTrackable, public ws::wsClient
 {
 public:
     enum ConnState
@@ -251,9 +250,9 @@ public:
 protected:
     ConnState mConnState = kConnNew;
     Listener* mListener;
-    karere::Client *karereClient;
+    karere::Client& karereClient;
     karere::Url mUrl;
-    MyMegaApi *mApi;
+    karere::MyMegaApi *mApi;
     bool mHeartbeatEnabled = false;
     bool mTerminating = false;
     promise::Promise<void> mConnectPromise;
@@ -272,8 +271,8 @@ protected:
     void setConnState(ConnState newState);
 
     virtual void wsConnectCb();
-    virtual void wsCloseCb(int errcode, int errtype, const char *preason, size_t reason_len);
-    virtual void wsHandleMsgCb(char *data, size_t len);
+    virtual void wsCloseCb(int errcode, int errtype, const std::string& reason);
+    virtual void wsHandleMsgCb(std::string&& data);
     
     void onSocketClose(int ercode, int errtype, const std::string& reason);
     promise::Promise<void> reconnect(const std::string& url=std::string());
@@ -296,7 +295,7 @@ protected:
     bool sendKeepalive(time_t now=0);
     
 public:
-    Client(MyMegaApi *api, karere::Client *client, Listener& listener, uint8_t caps);
+    Client(karere::MyMegaApi *api, karere::Client& client, Listener& listener, uint8_t caps);
     const Config& config() const { return mConfig; }
     bool isConfigAcknowledged() { return mPrefsAckWait; }
     bool isOnline() const { return (mConnState >= kConnected); }

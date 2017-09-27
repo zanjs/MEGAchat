@@ -23,8 +23,6 @@ find_package(Sqlite3 REQUIRED)
 
 
 set(KARERE_LOGGER_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/base CACHE PATH "Karere logger include dir") #tell mpenc to use the karere logger
-set(LIBWS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/libws CACHE PATH "libws source dir, where its CMakeLists.txt is located")
-set(LIBWS_EXTERNAL_LOOP 1 CACHE BOOL "Use libws with external libevent loop")
 
 set (SRCS
     karereCommon.cpp
@@ -38,13 +36,26 @@ set (SRCS
     presenced.cpp
     megachatapi.cpp
     megachatapi_impl.cpp    
-    waiter/libeventWaiter.cpp
     net/websocketsIO.cpp
-    net/libwsIO.cpp
 )
 
 if (NOT optKarereDisableWebrtc)
     list(APPEND SRCS rtcCrypto.cpp)
+endif()
+
+if (optServicesUseLibuv)
+    list(APPEND SRCS net/libwebsocketsIO.cpp)
+    find_package(LibWebSockets REQUIRED)
+    set(WEBSOCK_INCLUDE_DIRS ${LIBWEBSOCKETS_INCLUDE_DIR})
+    set(WEBSOCK_LIBS ${LIBWEBSOCKETS_LIBRARIES})
+    message(STATUS "Using libUV and libwebsockets")
+else()
+    set(LIBWS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/libws CACHE PATH "libws source dir, where its CMakeLists.txt is located")
+    list(APPEND SRCS net/libwsIO.cpp)
+    add_subdirectory(${LIBWS_DIR} libws)
+    set(WEBSOCK_INCLUDE_DIRS ${LIBWS_DIR}/src ${CMAKE_CURRENT_BINARY_DIR}/libws)
+    set(WEBSOCK_LIBS ws)
+    message(STATUS "Using libevent and libws")
 endif()
 
 if (("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU") OR ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"))
@@ -78,7 +89,6 @@ endif()
 
 get_property(SERVICES_INCLUDE_DIRS GLOBAL PROPERTY SERVICES_INCLUDE_DIRS)
 
-add_subdirectory(${LIBWS_DIR} libws)
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/karereDbSchema.cpp
     COMMAND ${CMAKE_COMMAND} -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/genDbSchema.cmake
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/dbSchema.sql ${CMAKE_CURRENT_SOURCE_DIR}/genDbSchema.cmake
@@ -96,13 +106,14 @@ set(KARERE_INCLUDE_DIRS
     ${LIBMEGA_INCLUDE_DIRS}
     ${CRYPTOPP_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
-    ${LIBWS_DIR}/src ${CMAKE_CURRENT_BINARY_DIR}/libws
+    ${WEBSOCK_INCLUDE_DIRS}
 )
 
 set(KARERE_DEP_LIBS
     ${LIBMEGA_LIBRARIES}
-    ws
     ${SQLITE3_LIBRARY}
+    ${WEBSOCK_LIBS}
+    ${OPENSSL_LIBRARIES}
 )
 
 if (NOT optKarereDisableWebrtc)

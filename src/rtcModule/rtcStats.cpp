@@ -81,7 +81,7 @@ void Recorder::OnComplete(const webrtc::StatsReports& data)
         {
             KR_LOG_ERROR("Stats: %s", e.what());
         }
-    }, mSession.mManager.mClient.appCtx);
+    }, mSession.call().manager().client().appCtx);
 }
 
 void dumpStats(const artc::MyStatsReports& data)
@@ -239,12 +239,12 @@ void Recorder::start()
     mTimer = setInterval([this]()
     {
         //mSession.rtcConn()->GetStats(static_cast<webrtc::StatsObserver*>(this), nullptr, mStatsLevel);
-    }, mScanPeriod, mSession.mManager.mClient.appCtx);
+    }, mScanPeriod, mSession.call().manager().client().appCtx);
 }
 
 void Recorder::terminate(const std::string& termRsn)
 {
-    cancelInterval(mTimer, mSession.mManager.mClient.appCtx);
+    cancelInterval(mTimer, mSession.call().manager().client().appCtx);
     mTimer = 0;
     mStats->mDur = karere::timestampMs() - mStats->mStartTs;
     mStats->mTermRsn = termRsn;
@@ -263,7 +263,7 @@ std::string Recorder::getStats(const StatSessInfo& info)
 Recorder::~Recorder()
 {
     if (mTimer)
-        cancelInterval(mTimer, mSession.mManager.mClient.appCtx);
+        cancelInterval(mTimer, mSession.call().manager().client().appCtx);
 }
 
 const char* decToString(float v)

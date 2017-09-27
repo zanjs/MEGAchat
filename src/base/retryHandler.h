@@ -2,9 +2,8 @@
 #define RETRYHANDLER_H
 
 #include <promise.h>
-#include <base/gcm.h>
 #include <karereCommon.h>
-#include <base/timers.hpp>
+#include <base/appCtx.h>
 #include <base/trackDelete.h>
 
 #define RETRY_DEBUG_LOGGING 1
@@ -89,7 +88,9 @@ inline static void callFuncIfNotNull(std::nullptr_t){}
  * (failed) call of the function.
  */
 template<class Func, class CancelFunc=void*>
-class RetryController: public IRetryController, public karere::DeleteTrackable
+class RetryController: public IRetryController,
+                       public karere::DeleteTrackable,
+                       public karere::AppCtxRef
 {
 public:
     /** @brief
@@ -108,11 +109,9 @@ protected:
     unsigned mMaxSingleWaitTime;
     unsigned short mDelayRandPct = 20;
     promise::Promise<RetType> mPromise;
-    unsigned long mTimer = 0;
+    karere::TimerHandle mTimer;
     unsigned short mInitialWaitTime;
-    unsigned mRestart = 0;
-    void *appCtx;
-    
+    unsigned mRestart = 0;    
 public:
     /** Gets the output promise that is resolved. */
     promise::Promise<RetType>& getPromise() {return mPromise;}
@@ -132,14 +131,13 @@ public:
      * then the first wait will be 120ms, the next 240ms, then 480ms and so on.
      * This can be used for high frequency initial retrying.
      */
-    RetryController(const std::string& aName, Func&& func, CancelFunc&& cancelFunc, unsigned attemptTimeout, void *ctx,
+    RetryController(const std::string& aName, Func&& func, CancelFunc&& cancelFunc, unsigned attemptTimeout, AppCtx& ctx,
         unsigned maxSingleWaitTime=kDefaultMaxSingleWaitTime,
         size_t maxAttemptCount=kDefaultMaxAttemptCount, unsigned short backoffStart=1000)
-        :IRetryController(aName), mFunc(std::forward<Func>(func)), mCancelFunc(std::forward<CancelFunc>(cancelFunc)),
+        :IRetryController(aName), AppCtxRef(ctx), mFunc(std::forward<Func>(func)), mCancelFunc(std::forward<CancelFunc>(cancelFunc)),
          mMaxAttemptCount(maxAttemptCount), mAttemptTimeout(attemptTimeout),
          mMaxSingleWaitTime(maxSingleWaitTime),
-         mInitialWaitTime(backoffStart),
-         appCtx(ctx)
+         mInitialWaitTime(backoffStart)
     {}
     ~RetryController()
     {
@@ -161,9 +159,9 @@ public:
             {
                 if (wptr.deleted())
                     return;
-                mTimer = 0;
+                mTimer.reset();
                 nextTry();
-            }, delay, appCtx);
+            }, delay);
         }
         else
         {
@@ -264,8 +262,7 @@ protected:
     {
         if (!mTimer)
             return;
-        cancelTimeout(mTimer, appCtx);
-        mTimer = 0;
+        mTimer.cancel();
     }
 
     template <class P>
@@ -324,7 +321,7 @@ protected:
                 if (wptr.deleted())
                     return;
                 assert(attempt == mCurrentAttemptId); //if we are in a next attempt, cancelTimer() should have been called and this callback should never fire
-                mTimer = 0;
+                mTimer.reset();
                 static const promise::Error timeoutError("timeout", promise::kErrTimeout, promise::kErrorTypeGeneric);
                 RETRY_LOG("Attempt %zu timed out after %u ms", mCurrentAttemptNo, mAttemptTimeout);
                 if (!std::is_same<CancelFunc, std::nullptr_t>::value)
@@ -335,7 +332,7 @@ protected:
                         return;
                 }
                 schedNextRetry(timeoutError);
-            }, mAttemptTimeout, appCtx);
+            }, mAttemptTimeout);
         }
         mState = kStateInProgress;
 
@@ -386,9 +383,9 @@ protected:
         {
             if (wptr.deleted())
                 return;
-            mTimer = 0;
+            mTimer.reset();
             nextTry();
-        }, waitTime, appCtx);
+        }, waitTime);
         return true;
     }
 };
@@ -413,7 +410,7 @@ static inline void _emptyCancelFunc(){}
    See the constructor of RetryController for more details
  */
 template <class Func, class CancelFunc=decltype(&rh::_emptyCancelFunc)>
-static inline auto retry(const std::string& aName, Func&& func, void *ctx,
+static inline auto retry(const std::string& aName, Func&& func, AppCtx& ctx,
     CancelFunc&& cancelFunc = &rh::_emptyCancelFunc,
     unsigned attemptTimeout = 0,
     size_t maxRetries = rh::kDefaultMaxAttemptCount,

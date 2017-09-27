@@ -9,15 +9,13 @@
 #include <QDir>
 #include "mainwindow.h"
 #include "chatWindow.h"
-#include <base/gcm.h>
-#include <base/services.h>
 #include <chatClient.h>
 #include <sdkApi.h>
 #include <chatd.h>
 #include <mega/megaclient.h>
 #include <karereCommon.h>
 #include <fstream>
-#include <net/libwsIO.h>
+#include <net/libwebsocketsIO.h>
 
 using namespace std;
 using namespace promise;
@@ -34,32 +32,53 @@ struct GcmEvent: public QEvent
 };
 const QEvent::Type GcmEvent::type = (QEvent::Type)QEvent::registerEventType();
 
-class AppDelegate: public QObject
+class AppDelegate: public QObject, public karere::AppCtx
 {
     Q_OBJECT
 public slots:
     void onAppTerminate();
     void onEsidLogout();
+protected:
+    std::unique_ptr<std::thread> mThread;
 public:
+    libwebsockets::IO mWebsocketIO;
+    AppDelegate(): AppCtx(new LibuvWaiter), mWebsocketIO(nullptr, *this)
+    {
+        mWebsocketIO.registerWithEventLoop(waiter().loop());
+    }
+    void postMessage(MarshallMessage* msg)
+    {
+        QEvent* event = new GcmEvent(msg);
+        QApplication::postEvent(this, event);
+    }
     virtual bool event(QEvent* event)
     {
         if (event->type() != GcmEvent::type)
             return false;
 
-        megaProcessMessage(static_cast<GcmEvent*>(event)->ptr);
+        processMessage(static_cast<GcmEvent*>(event)->ptr);
         return true;
     }
+    void runEventLoop()
+    {
+        mThread.reset(new std::thread(
+        [this]()
+        {
+            waiter().setLoopThreadId();
+            KR_LOG_DEBUG("Starting event loop...");
+            uv_run(waiter().loop(), UV_RUN_DEFAULT);
+            KR_LOG_DEBUG("Eventloop terminated");
+        }));
+    }
+    void terminate()
+    {
+        waiter().stop();
+        mThread->join();
+    }
+
 };
 
 AppDelegate appDelegate;
-
-extern "C" void myMegaPostMessageToGui(void* msg, void* appCtx)
-{
-    QEvent* event = new GcmEvent(msg);
-    QApplication::postEvent(&appDelegate, event);
-}
-
-using namespace strophe;
 
 void setVidencParams();
 void saveSid(const char* sdkSid);
@@ -68,29 +87,28 @@ void sigintHandler(int)
 {
     printf("SIGINT Received\n"); //don't use the logger, as it may cause a deadlock
     fflush(stdout);
-    marshallCall([]{ appDelegate.onAppTerminate(); }, NULL);
+    appDelegate.marshallCall([]{ appDelegate.onAppTerminate(); });
 }
 
 std::string gAppDir = karere::createAppDir();
-std::unique_ptr<WebsocketsIO> gWebsocketsIO;
 std::unique_ptr<karere::Client> gClient;
 std::unique_ptr<::mega::MegaApi> gSdk;
 
 void createWindowAndClient()
 {
+    appDelegate.runEventLoop();
     mainWin = new MainWindow();
     gSdk.reset(new ::mega::MegaApi("karere-native", gAppDir.c_str(), "Karere Native"));
 
     // Websockets network layer based on libws
-    gWebsocketsIO.reset(new LibwsIO());
-    gClient.reset(new karere::Client(*gSdk, gWebsocketsIO.get(), *mainWin, gAppDir, 0));
+    gClient.reset(new karere::Client(*gSdk, &appDelegate.mWebsocketIO, *mainWin, gAppDir, 0, appDelegate));
     mainWin->setClient(*gClient);
     QObject::connect(mainWin, SIGNAL(esidLogout()), &appDelegate, SLOT(onEsidLogout()));
 }
 
 int main(int argc, char **argv)
 {
-    karere::globalInit(myMegaPostMessageToGui, 0, (gAppDir+"/log.txt").c_str(), 500);
+    karere::globalInit(0, (gAppDir+"/log.txt").c_str(), 500);
     const char* staging = getenv("KR_USE_STAGING");
     if (staging && strcmp(staging, "1") == 0)
     {
@@ -151,10 +169,10 @@ int main(int argc, char **argv)
         {
             QMessageBox::critical(nullptr, "rtctestapp", QString::fromLatin1("Client startup failed with error:\n")+QString::fromStdString(err.msg()));
         }
-        marshallCall([]()
+        appDelegate.marshallCall([]()
         {
             appDelegate.onAppTerminate();
-        }, NULL);
+        });
     });
     return a.exec();
 }
@@ -208,14 +226,14 @@ void AppDelegate::onAppTerminate()
     })
     .then([this]()
     {
-        marshallCall([]() //post destruction asynchronously so that all pending messages get processed before that
+        appDelegate.marshallCall([]() //post destruction asynchronously so that all pending messages get processed before that
         {
             qApp->quit(); //stop processing marshalled call messages
             gClient.reset();
             gSdk.reset();
-            gWebsocketsIO.reset();
+            appDelegate.terminate();
             karere::globalCleanup();
-        }, NULL);
+        });
     });
 }
 
@@ -232,7 +250,7 @@ void AppDelegate::onEsidLogout()
     gClient->terminate(true)
     .then([this]()
     {
-        marshallCall([this]() //post destruction asynchronously so that all pending messages get processed before that
+        appDelegate.marshallCall([this]() //post destruction asynchronously so that all pending messages get processed before that
         {
             QObject::disconnect(qApp, SIGNAL(lastWindowClosed()), &appDelegate, SLOT(onAppTerminate()));
 
@@ -254,7 +272,7 @@ void AppDelegate::onEsidLogout()
             {
                 KR_LOG_ERROR("Error re-creating or logging in chat client after ESID: ", err.what());
             });
-        }, NULL);
+        });
     });
 }
 
