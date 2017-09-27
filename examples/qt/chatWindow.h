@@ -190,7 +190,7 @@ protected:
     void removeFromListAndDelete();
 };
 
-class ChatWindow: public QDialog, public karere::IApp::IChatHandler
+class ChatWindow: public QDialog, public karere::IApp::IChatHandler, public karere::DeleteTrackable
 {
     Q_OBJECT
 public:
@@ -631,12 +631,25 @@ public:
         mRoom.onOnlineStateChange(state);
         updateChatdStatusDisplay(state);
 
-        if ((state == chatd::kChatStateOnline) && (mChat->size() < 2)
-        && ((!mChat->isFetchingFromServer())))
+        if (state == chatd::kChatStateOnline)
         {
+#ifndef KARERE_DISABLE_WEBRTC
+            ui.mAudioCallBtn->show();
+            ui.mVideoCallBtn->show();
+#endif
+            if ((mChat->size() < 2) && !mChat->isFetchingFromServer())
+            {
             // avoid re-entrancy - we are in a chatd callback. We could use mega::marshallCall instead,
             // but this is safer as the window may get destroyed before the message is processed
-            QMetaObject::invokeMethod(this, "fetchMoreHistory", Qt::QueuedConnection, Q_ARG(bool, false));
+                QMetaObject::invokeMethod(this, "fetchMoreHistory", Qt::QueuedConnection, Q_ARG(bool, false));
+            }
+        }
+        else
+        {
+#ifndef KARERE_DISABLE_WEBRTC
+            ui.mAudioCallBtn->hide();
+            ui.mVideoCallBtn->hide();
+#endif
         }
     }
     void updateChatdStatusDisplay(chatd::ChatState state)

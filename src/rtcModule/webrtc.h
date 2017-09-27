@@ -255,7 +255,7 @@ public:
     uint32_t callerClient() const { return mCallerClient; }
     void changeHandler(ICallHandler* handler) { mHandler = handler; }
     virtual karere::AvFlags sentAv() const = 0;
-    virtual void hangup(TermCode reason=TermCode::kInvalid) = 0;
+    virtual promise::Promise<void> hangup(TermCode reason=TermCode::kInvalid) = 0;
     virtual bool answer(karere::AvFlags av) = 0;
     virtual bool changeLocalRenderer(IVideoRenderer* renderer) = 0;
     virtual karere::AvFlags muteUnmute(karere::AvFlags av) = 0;
@@ -299,7 +299,9 @@ protected:
     karere::Client& client() const { return mClient; }
     /** @brief Default video encoding parameters. */
     VidEncParams vidEncParams;
+    bool mIsInitialized = false;
     virtual promise::Promise<void> init(unsigned gelbTimeout) = 0;
+    bool isInitialized() const { return mIsInitialized; }
     karere::Id ownAnonId() const { return mOwnAnonId; }
 
     /** @brief Returns a list of all detected audio input devices on the system */

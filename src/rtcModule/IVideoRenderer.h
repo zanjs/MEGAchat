@@ -1,5 +1,6 @@
 #ifndef IVIDEORENDERER_H
 #define IVIDEORENDERER_H
+#include <trackDelete.h>
 namespace rtcModule
 {
 /**
@@ -14,7 +15,7 @@ namespace rtcModule
  * to that bitmap object (rather than to the raw memory) so that it can use and free
  * the high-level bitmap object properly.
  */
-class IVideoRenderer
+class IVideoRenderer: public karere::DeleteTrackable
 {
 public:
     /**

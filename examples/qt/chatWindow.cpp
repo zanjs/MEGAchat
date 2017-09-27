@@ -19,10 +19,9 @@ ChatWindow::ChatWindow(QWidget* parent, karere::ChatRoom& room)
 #ifndef KARERE_DISABLE_WEBRTC
     connect(ui.mVideoCallBtn, SIGNAL(clicked(bool)), this, SLOT(onVideoCallBtn(bool)));
     connect(ui.mAudioCallBtn, SIGNAL(clicked(bool)), this, SLOT(onAudioCallBtn(bool)));
-#else
+#endif
     ui.mAudioCallBtn->hide();
     ui.mVideoCallBtn->hide();
-#endif
     ui.mChatdStatusDisplay->hide();
     if (!mRoom.isGroup())
         ui.mMembersBtn->hide();
@@ -61,13 +60,40 @@ void ChatWindow::createCallGui(rtcModule::ICall* call)
 
 void ChatWindow::closeEvent(QCloseEvent* event)
 {
-    if (mCallGui)
-        mCallGui->hangup();
-    event->accept();
+    if (!mCallGui || !mCallGui->call())
+    {
+        event->accept();
+        return;
+    }
+    auto state = mCallGui->call()->state();
+    if (state < rtcModule::ICall::kStateTerminating)
+    {
+        event->ignore();
+        auto wptr = weakHandle();
+        mCallGui->hangup()
+        .then([this, wptr]()
+        {
+            if (wptr.deleted())
+                return;
+            close();
+        });
+    }
+    else if (state == rtcModule::ICall::kStateTerminating)
+    {
+        event->ignore();
+    }
+    else
+    {
+        assert(state == rtcModule::ICall::kStateDestroyed);
+        event->accept();
+    }
 }
 
 void ChatWindow::onCallBtn(bool video)
 {
+    auto rtc = mRoom.parent.client.rtc.get();
+    if (!rtc || !rtc->isInitialized())
+        return;
     if (mRoom.isGroup())
     {
         QMessageBox::critical(this, "Call", "Nice try, but group audio and video calls are not implemented yet");

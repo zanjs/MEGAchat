@@ -102,6 +102,7 @@ promise::Promise<void> RtcModule::init(unsigned gelbTimeout)
         if (wptr.deleted())
             return;
         mClient.chatd->setRtcHandler(this);
+        mIsInitialized = true;
     });
 }
 
@@ -1078,7 +1079,7 @@ bool Call::answer(AvFlags av)
     return startOrJoin(av);
 }
 
-void Call::hangup(TermCode reason)
+promise::Promise<void> Call::hangup(TermCode reason)
 {
     switch (mState)
     {
@@ -1092,8 +1093,7 @@ void Call::hangup(TermCode reason)
             assert(reason == TermCode::kCallReqCancel || reason == TermCode::kAnswerTimeout);
         }
         cmdBroadcast(RTCMD_CALL_REQ_CANCEL, mId, reason);
-        destroy(reason, false);
-        return;
+        return destroy(reason, false);
     case kStateRingIn:
         if (reason == TermCode::kInvalid)
         {
@@ -1110,8 +1110,7 @@ void Call::hangup(TermCode reason)
         }
         assert(mSessions.empty());
         cmd(RTCMD_CALL_REQ_DECLINE, mCallerUser, mCallerClient, mId, reason);
-        destroy(reason, false);
-        return;
+        return destroy(reason, false);
     case kStateJoining:
     case kStateInProgress:
     case kStateHasLocalStream:
@@ -1119,16 +1118,18 @@ void Call::hangup(TermCode reason)
         reason = TermCode::kUserHangup;
         break;
     case kStateTerminating:
+        SUB_LOG_DEBUG("hangup: Call already terminating");
+        return mDestroyPromise;
     case kStateDestroyed:
         SUB_LOG_DEBUG("hangup: Call already terminating/terminated");
-        return;
+        return promise::_Void();
     default:
         reason = TermCode::kUserHangup;
         SUB_LOG_WARNING("Don't know what term code to send in state %s", stateStr());
         break;
     }
     // in any state, we just have to send CALL_TERMINATE and that's all
-    destroy(reason, true);
+    return destroy(reason, true);
 }
 Call::~Call()
 {

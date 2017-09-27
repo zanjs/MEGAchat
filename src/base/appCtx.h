@@ -5,16 +5,12 @@ namespace karere
 {
 class AppCtx;
 
-class Timer: public WeakReferenceable<Timer>
+struct Timer: public WeakReferenceable<Timer>
 {
-protected:
     void* mTimerEvent = nullptr;
     AppCtx& mAppCtx;
     Timer(AppCtx& appCtx): WeakReferenceable<Timer>(this), mAppCtx(appCtx){}
     virtual ~Timer();
-    friend class AppCtx;
-    friend class TimerHandle;
-public:
     typedef WeakReferenceable<Timer>::WeakRefHandle Handle;
 };
 /** Convenience wrapper around the weak handle of Timer, to allow canceling
@@ -24,7 +20,7 @@ class TimerHandle: protected WeakReferenceable<Timer>::WeakRefHandle
 {
 protected:
     typedef WeakReferenceable<Timer>::WeakRefHandle Base;
-    friend class Timer;
+    friend struct Timer;
 public:
     using Base::operator=;
     using Base::operator bool;
@@ -40,17 +36,9 @@ public:
     /** Cancels a previously set timer with setTimeout() or setInterval()
      * @return \c false if the handle is not valid. This can happen if the timeout
      * already triggered, then the handle is invalidated. This situation is safe and
-     * considered normal
+     * considered normal.
      */
-    bool cancel()
-    {
-        auto timer = weakPtr();
-        if (!timer)
-            return false;
-        delete timer; //unregisters the timer event from the eventoop
-        assert(!isValid());
-        return true;
-    }
+    bool cancel();
 };
 
 class AppCtx
@@ -78,10 +66,10 @@ public:
     inline void marshallCall(F&& func);
     virtual void postMessage(MarshallMessage* msg) = 0;
     /** When the application's main (GUI) thread receives a message posted by
-     * krPostMessageToGui(), the user's code must forward the \c void* pointer
-     * from that message to this function for further processing. This function is
-     * called by a handler in the app's (GUI) event/message loop (or equivalent).
-    * \warning Must be called only from the GUI thread
+     * postMessage(), it normally posts it on a queue processed by the main thread.
+     * When the message is dequeued, it should be passed to this function for
+     * processing in the context of the main thread.
+    * \warning Must be called only from the 'post' thread
     */
     static inline void processMessage(void* vptr);
 protected:

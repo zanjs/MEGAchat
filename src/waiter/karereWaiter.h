@@ -38,11 +38,10 @@ protected:
     template <class F>
     auto msgExecSync(F&& func) -> typename std::enable_if<!std::is_same<decltype(func()), void>::value, decltype(func())>::type
     {
-        typedef decltype(func()) RetType;
         struct Cmd: SyncCmdBase
         {
             F mFunc;
-            RetType mResult;
+            decltype(func()) mResult;
             Cmd(F&& func): SyncCmdBase(kCmdExecSync), mFunc(std::forward<F>(func))
             {
                 this->mExecMutex.lock();
@@ -94,7 +93,11 @@ protected:
     }
 public:
     std::thread::id loopThreadId() const { return mLoopThreadId; }
-    void setLoopThread() {  mLoopThreadId = std::this_thread::get_id(); }
+    void setLoopThread()
+    {
+        mLoopThreadId = std::this_thread::get_id();
+        KR_LOG_DEBUG("setLoopThread id=%p\n", pthread_self());
+    }
     template <class F>
     auto execSync(F&& func) -> decltype(func())
     {

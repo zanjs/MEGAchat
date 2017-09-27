@@ -64,7 +64,8 @@ public slots:
 public:
     Ui::CallGui ui;
     CallGui(ChatWindow& parent, rtcModule::ICall* call);
-    void hangup() { mCall->hangup(); }
+    rtcModule::ICall* call() { return mCall; }
+    promise::Promise<void> hangup() { return mCall->hangup(); }
     virtual void setCall(rtcModule::ICall* call) { mCall = call; }
     virtual void onLocalStreamObtained(rtcModule::IVideoRenderer*& renderer)
     {

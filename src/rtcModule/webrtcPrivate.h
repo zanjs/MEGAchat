@@ -139,7 +139,7 @@ public:
         karere::Id callerUser, uint32_t callerClient);
     ~Call();
     virtual karere::AvFlags sentAv() const;
-    virtual void hangup(TermCode reason=TermCode::kInvalid);
+    virtual promise::Promise<void> hangup(TermCode reason=TermCode::kInvalid);
     virtual bool answer(karere::AvFlags av);
     virtual bool changeLocalRenderer(IVideoRenderer* renderer);
     virtual karere::AvFlags muteUnmute(karere::AvFlags av);

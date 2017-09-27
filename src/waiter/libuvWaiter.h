@@ -8,7 +8,7 @@
 namespace karere
 {
 typedef uv_loop_t krEventLoop;
-class Timer;
+struct Timer;
 struct TimerMessage;
 
 class LibuvWaiter : public karere::WaiterBase<LibuvWaiter>
@@ -37,7 +37,7 @@ protected:
     static void uvCtrlReadCb(uv_stream_t* handle, ssize_t nread, const uv_buf_t* buf);
     friend class WaiterBase<LibuvWaiter>;
     friend class AppCtx;
-    friend class Timer;
+    friend struct Timer;
 };
 }
 
