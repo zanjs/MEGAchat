@@ -68,7 +68,6 @@ protected:
     template <class F>
     auto msgExecSync(F&& func) -> typename std::enable_if<std::is_same<decltype(func()), void>::value, decltype(func())>::type
     {
-        typedef decltype(func()) RetType;
         struct Cmd: SyncCmdBase
         {
             F mFunc;
