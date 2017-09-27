@@ -1,0 +1,7 @@
+#ifndef SERVICES_CONFIG_H
+#define SERVICES_CONFIG_H
+
+#cmakedefine KR_USE_LIBUV
+#cmakedefine KR_USE_LIBWEBSOCKETS
+#endif
+
