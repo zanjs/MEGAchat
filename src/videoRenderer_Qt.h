@@ -35,6 +35,7 @@ protected slots:
     void paintEvent(QPaintEvent * event);
 public:
     VideoRendererQt(QWidget* parent);
+    virtual ~VideoRendererQt() {}
     /** Sets the aspect ratio to be kept constant when resizing the Qt widget */
     void setAspectRatio(double ar)
     {
@@ -57,7 +58,6 @@ public:
         else
             return -1;
     }
-    virtual ~VideoRendererQt() {}
 //IVideoRenderer interface
     virtual void* getImageBuffer(unsigned short width, unsigned short height, void*& userData);
     virtual void frameComplete(void* userData);
