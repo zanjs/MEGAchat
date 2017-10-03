@@ -126,27 +126,18 @@ bool wsClient::wsSendMessage(char *msg, size_t len)
 
     WS_LOG_DEBUG("Sending %d bytes", len);
 
-    if (std::this_thread::get_id() == waiter().loopThreadId())
+    bool result = (std::this_thread::get_id() == waiter().loopThreadId())
+        ? mSocket->sendMessage(msg, len)
+        : waiter().execSync([this, msg, len]()
+         {
+           return mSocket->sendMessage(msg, len);
+         });
+    if (!result)
     {
-        bool result = mSocket->sendMessage(msg, len);
-        if (!result)
-        {
-            WS_LOG_WARNING("wsClient::wsSendMessage: Immediate error");
-        }
-        return result;
+        WS_LOG_WARNING("wsClient::wsSendMessage: Immediate error");
     }
-    else
-    {
-       return waiter().execSync([this, msg, len]()
-       {
-           bool result = mSocket->sendMessage(msg, len);
-           if (!result)
-           {
-               WS_LOG_WARNING("wsClient::wsSendMessage: Immediate error");
-           }
-           return result;
-       });
-    }
+    return result;
+
 }
 
 void wsClient::wsDisconnect(bool immediate)

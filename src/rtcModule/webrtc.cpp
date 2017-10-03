@@ -272,7 +272,7 @@ void RtcModule::msgCallRequest(RtMessage& packet)
 {
     if (packet.userid == mClient.myHandle())
     {
-        RTCM_LOG_DEBUG("Ignoring call request from another client of our user");
+        RTCM_LOG_ERROR("Ignoring call request from another client of our user");
         return;
     }
     packet.callid = packet.payload.read<uint64_t>(0);
@@ -979,7 +979,14 @@ void Call::stopIncallPingTimer()
 
 void Call::removeSession(Session& sess, TermCode reason)
 {
-    mSessions.erase(sess.mSid);
+    auto it = mSessions.find(sess.mSid);
+    assert(it != mSessions.end());
+    auto sptr = it->second;
+    mSessions.erase(it);
+    marshallCall([sptr]() mutable
+    {
+        sptr.reset();
+    });
     if (mState == Call::kStateTerminating) // we already handle call termination
         return;
 
@@ -1133,7 +1140,7 @@ promise::Promise<void> Call::hangup(TermCode reason)
 }
 Call::~Call()
 {
-    SUB_LOG_ERROR("Destroyed");
+    SUB_LOG_DEBUG("Destroyed");
 }
 void Call::onUserOffline(Id userid, uint32_t clientid)
 {
@@ -1713,8 +1720,7 @@ void Session::msgSessTerminateAck(RtMessage& packet)
         // Therefore, we need to do the resolve on a copy of the promise object
         // (pointing to the same shared promise instance), that outlives the
         // destruction of mTerminatePromise
-        auto pms = mTerminatePromise;
-        pms.resolve();
+        mTerminatePromise.resolve();
     }
 }
 
