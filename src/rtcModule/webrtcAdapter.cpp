@@ -112,6 +112,7 @@ void DeviceManager::enumInputDevices()
             devices.push_back(cricket::Device(name, id));
         }
     }
+    mInputDevices.audio.push_back(cricket::Device("default", "0"));
     // TODO: Implement audio device enumeration, when webrtc has it again
     // Maybe VoEHardware in src/voice_engine/main/interface/voe_hardware.h
 }
