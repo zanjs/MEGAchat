@@ -92,8 +92,10 @@ void LibuvWaiter::timerDel(void*& timer)
     {
         assert(timer);
         uv_timer_stop((uv_timer_t*)timer);
-        uv_close((uv_handle_t*)timer, NULL);
-        delete (uv_handle_t*)timer;
+        uv_close((uv_handle_t*)timer, [](uv_handle_t* handle)
+        {
+            delete handle;
+        });
     });
     timer = nullptr;
 }
