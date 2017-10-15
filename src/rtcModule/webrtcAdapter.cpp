@@ -4,6 +4,7 @@
 #include <modules/video_capture/video_capture.h>
 #include <media/engine/webrtcvideocapturerfactory.h>
 #include "webrtcAsyncWaiter.h"
+#include "rtcmPrivate.h"
 
 namespace artc
 {
@@ -96,10 +97,17 @@ rtc::scoped_refptr<webrtc::MediaStreamInterface> cloneMediaStream(
 
 void DeviceManager::enumInputDevices()
 {
+    mInputDevices.audio.push_back(cricket::Device("default", "0"));
+    // TODO: Implement audio device enumeration, when webrtc has it again
+    // Maybe VoEHardware in src/voice_engine/main/interface/voe_hardware.h
+
     std::unique_ptr<webrtc::VideoCaptureModule::DeviceInfo> info(
         webrtc::VideoCaptureFactory::CreateDeviceInfo());
     if (!info)
-        throw std::runtime_error("Can't enumerate video devices");
+    {
+        RTCM_LOG_WARNING("Can't enumerate video devices");
+        return;
+    }
     int numDevices = info->NumberOfDevices();
     auto& devices = mInputDevices.video;
     for (int i = 0; i < numDevices; ++i)
@@ -112,9 +120,6 @@ void DeviceManager::enumInputDevices()
             devices.push_back(cricket::Device(name, id));
         }
     }
-    mInputDevices.audio.push_back(cricket::Device("default", "0"));
-    // TODO: Implement audio device enumeration, when webrtc has it again
-    // Maybe VoEHardware in src/voice_engine/main/interface/voe_hardware.h
 }
 
 template<>
@@ -126,13 +131,15 @@ void InputDeviceShared<webrtc::VideoTrackInterface, webrtc::VideoTrackSourceInte
     std::unique_ptr<cricket::VideoCapturer> capturer(
         factory.Create(cricket::Device(mOptions->device.name, 0)));
     if (!capturer)
-        throw std::runtime_error("Could not create video capturer");
+    {
+        RTCM_LOG_WARNING("Could not create video capturer for device '%'", mOptions->device.name.c_str());
+    }
 
     mSource = gWebrtcContext->CreateVideoSource(capturer.release(),
         &(mOptions->constraints));
 
     if (!mSource.get())
-        throw std::runtime_error("Could not create a video source");
+        throw std::runtime_error("Could not create a video source for device "+mOptions->device.name);
 }
 template<> webrtc::VideoTrackInterface*
 InputDeviceShared<webrtc::VideoTrackInterface, webrtc::VideoTrackSourceInterface>::createTrack()
