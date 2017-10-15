@@ -200,7 +200,6 @@ Client::~Client()
     {
         mHeartbeatTimer.cancel();
     }
-    //when the strophe::Connection is destroyed, its handlers are automatically destroyed
 }
 
 promise::Promise<void> Client::retryPendingConnections()
@@ -2751,10 +2750,10 @@ void Contact::notifyTitleChanged()
 Contact::~Contact()
 {
     auto& client = mClist.client;
-    client.userAttrCache().removeCb(mUsernameAttrCbId);
     // this is not normally needed, as we never delete contacts - just make them invisible
     if (client.initState() < Client::kInitTerminating)
     {
+        client.userAttrCache().removeCb(mUsernameAttrCbId);
         client.presenced().removePeer(mUserid, true);
         if (mDisplay)
         {
